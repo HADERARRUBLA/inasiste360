@@ -1,0 +1,15 @@
+# ==============================================================
+# APPS_illink - Dependencias Base
+# ==============================================================
+# Actualizar este archivo cada vez que un script nuevo 
+# requiera una librería adicional.
+# Instalar con: pip install -r requirements.txt
+# ==============================================================
+
+# --- Utilidades Core ---
+python-dotenv>=1.0.0       # Carga de variables .env
+requests>=2.31.0           # HTTP requests a APIs
+pandas>=2.1.0              # Manipulación de datos
+
+# --- Formatos de Salida ---
+openpyxl>=3.1.0            # Lectura/escritura de Excel (.xlsx)

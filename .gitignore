@@ -1,0 +1,47 @@
+# ==============================================================
+# APPS_illink - Git Ignore
+# ==============================================================
+
+# --- Credenciales y Secretos ---
+.env
+*.json.credentials
+token.json
+credentials.json
+client_secret*.json
+
+# --- Archivos Temporales ---
+.tmp/
+*.tmp
+*.bak
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+env/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Datos sensibles locales ---
+*.sqlite
+*.db
