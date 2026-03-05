@@ -1,0 +1,9 @@
+--- PERFILES (profiles) ---
+ID: 2e63b256-9c19-4673-9a1b-c86bd0da4323 | Name: sofia arrubla
+ID: 6cc66616-d824-47f5-bcd2-f144c052c096 | Name: hader arrubla
+
+--- REGISTROS EXISTENTES (time_entries) ---
+Nota: Estos son los profile_id que YA están en la tabla.
+Ref ID: 8482381e-cabe-43c4-aba2-42433eac807d
+Ref ID: 8482381e-cabe-43c4-aba2-42433eac807d
+Ref ID: 8482381e-cabe-43c4-aba2-42433eac807d

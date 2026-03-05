@@ -1,110 +1,94 @@
-# [Nombre de la Tarea] — SOP (Procedimiento Operativo Estándar)
+# DIRECTIVA: [NOMBRE_CLAVE_DE_LA_TAREA_SOP]
 
-> **Autor:** Agente de Desarrollo  
-> **Fecha de Creación:** YYYY-MM-DD  
-> **Última Actualización:** YYYY-MM-DD  
-> **Estado:** Borrador | En Progreso | Validado
-
----
-
-## 1. Objetivo
-
-Describir de forma clara y concisa **qué hace** esta tarea y **por qué** existe.
-
-> _Ejemplo: "Extraer leads de LinkedIn Sales Navigator, calificarlos con IA y registrarlos en un Google Sheet para seguimiento comercial."_
+> **ID:** [ID_UNICO_O_FECHA]
+> **Script Asociado:** `scripts/[nombre_del_script].py`
+> **Última Actualización:** [FECHA_ACTUAL]
+> **Estado:** [BORRADOR / ACTIVO / DEPRECADO]
 
 ---
 
-## 2. Entradas (Inputs)
+## 1. Objetivos y Alcance
+*Describe aquí QUÉ debe lograr esta tarea y POR QUÉ.*
+- **Objetivo Principal:** [Descripción concisa de la meta final, ej: "Extraer datos financieros de la API de AlphaVantage y normalizarlos a CSV".]
+- **Criterio de Éxito:** [Condición exacta para considerar la tarea completada, ej: "El archivo output.csv existe y no está vacío".]
 
-| Nombre         | Tipo           | Fuente                  | Obligatorio | Notas                          |
-|----------------|----------------|-------------------------|-------------|--------------------------------|
-| `ejemplo_api`  | API Key        | `.env` → `EJEMPLO_KEY`  | Sí          | Token de acceso a la API X     |
-| `archivo_csv`  | Archivo CSV    | `.tmp/entrada.csv`      | No          | Opcional: lista de seeds       |
-| `config_param` | JSON / Dict    | Hardcoded en script     | Sí          | Parámetros de configuración    |
+## 2. Especificaciones de Entrada/Salida (I/O)
+*Define estrictamente los tipos de datos para garantizar determinismo.*
 
----
+### Entradas (Inputs)
+- **Argumentos Requeridos:**
+  - `[nombre_arg]`: [Tipo de dato] - [Descripción].
+- **Variables de Entorno (.env):**
+  - `[NOMBRE_VAR]`: [Descripción del secreto/token necesario].
+- **Archivos Fuente:**
+  - `[ruta/al/archivo]`: [Descripción].
 
-## 3. Salidas (Outputs)
+### Salidas (Outputs)
+- **Artefactos Generados:**
+  - `[ruta/de/salida]`: [Formato y descripción del contenido].
+- **Retorno de Consola:** [Qué debe imprimir el script al finalizar: JSON, Path o Mensaje de éxito].
 
-| Nombre              | Tipo        | Destino                      | Notas                               |
-|---------------------|-------------|------------------------------|--------------------------------------|
-| `resultado.csv`     | CSV         | `.tmp/resultado.csv`         | Archivo intermedio procesado         |
-| `reporte_final.xlsx`| Excel       | `./output/reporte_final.xlsx`| Entregable final al usuario          |
-| `log de ejecución`  | Log         | Consola / archivo `.log`     | Registro de eventos y errores        |
+## 3. Flujo Lógico (Algoritmo)
+*NO escribas código aquí. Describe la lógica paso a paso para que cualquier script futuro pueda replicar el proceso.*
 
----
+1. **Inicialización:** [Ej: Cargar variables de entorno y validar existencia de carpetas].
+2. **Adquisición:** [Ej: Conectar a la base de datos X].
+3. **Procesamiento:** [Ej: Filtrar filas donde la columna Y sea nula].
+4. **Persistencia:** [Ej: Guardar resultado en .tmp/].
+5. **Limpieza:** [Ej: Cerrar conexiones].
 
-## 4. Lógica / Flujo de Trabajo
+## 4. Herramientas y Librerías
+*Lista blanca de dependencias permitidas.*
+- **Librerías Python:** `[pandas]`, `[requests]`, `[os]`.
+- **APIs Externas:** [Nombre y versión de la API].
 
-### Paso 1: Preparación
-- Cargar variables de entorno desde `.env`.
-- Validar que todas las entradas obligatorias existen.
+## 5. Restricciones y Casos Borde (Edge Cases)
+*Condiciones conocidas que podrían romper el flujo estándar.*
 
-### Paso 2: Extracción de Datos
-- Conectar a la fuente de datos (API, base de datos, archivo).
-- Descargar/leer los datos crudos.
+### Limitaciones Conocidas
+- **Limitación 1**: Descripción y cómo manejarla
+- **Limitación 2**: Descripción y cómo manejarla
 
-### Paso 3: Transformación
-- Limpiar datos (eliminar duplicados, normalizar formatos).
-- Aplicar lógica de negocio (filtros, cálculos, clasificaciones).
+### Errores Comunes y Soluciones
+- **Error X**: Por qué ocurre y cómo evitarlo
+- **Error Y**: Por qué ocurre y cómo evitarlo
 
-### Paso 4: Carga / Salida
-- Guardar resultados en el destino configurado.
-- Confirmar la escritura exitosa.
+### Validaciones Requeridas
+- Validación de entrada 1
+- Validación de entrada 2
+- Verificación de recursos necesarios
 
-### Paso 5: Logging y Cierre
-- Registrar métricas del proceso (registros procesados, errores, tiempo).
-- Notificar al usuario si corresponde.
+## 6. Protocolo de Errores y Aprendizajes (Memoria Viva)
+*CRÍTICO: Esta sección se actualiza automáticamente tras fallos. Aquí reside la inteligencia acumulada.*
 
----
+| Fecha | Error Detectado | Causa Raíz | Solución/Parche Aplicado |
+|-------|-----------------|------------|--------------------------|
+| [DD/MM] | [Error Type] | [Por qué falló] | [Instrucción: "Usar método X en lugar de Y"] |
+| ... | ... | ... | ... |
 
-## 5. Dependencias
+> **Nota de Implementación:** Si encuentras un nuevo error, **primero** arréglalo en el script, y **luego** documenta la regla aquí para evitar regresiones futuras.
 
-```
-# Librerías Python requeridas
-pandas>=2.0
-python-dotenv>=1.0
-requests>=2.28
-openpyxl>=3.1     # Si se genera Excel
-```
-
----
-
-## 6. Restricciones y Casos Borde ⚠️
-
-> **Esta sección es CRÍTICA.** Aquí se documenta todo lo que aprendemos sobre errores, límites y comportamientos inesperados. Cada vez que un script falla, la lección se registra aquí.
-
-### Restricciones Conocidas
-
-| #  | Restricción                                         | Descubierta | Impacto                      | Solución                                         |
-|----|-----------------------------------------------------|-------------|------------------------------|--------------------------------------------------|
-| 1  | _Ejemplo: La API X tiene rate limit de 100 req/min_ | 2024-01-15  | Script falla con error 429   | Implementar `time.sleep(0.6)` entre requests     |
-| 2  | _Ejemplo: El campo "fecha" viene en formato mixto_  | 2024-01-16  | Pandas no parsea correctamente| Usar `pd.to_datetime(col, format='mixed')`       |
-
-### Notas de Aprendizaje
-
-- **No hacer:** _(Documentar qué acciones evitar y por qué)_
-- **Siempre hacer:** _(Documentar buenas prácticas descubiertas)_
-- **Ojo con:** _(Documentar comportamientos sorpresivos)_
-
----
-
-## 7. Ejecución
+## 7. Ejemplos de Uso
+*Comandos para invocar el script asociado.*
 
 ```bash
-# Desde la raíz del proyecto
-python scripts/nombre_tarea.py
-
-# Con parámetros opcionales (si aplica)
-python scripts/nombre_tarea.py --modo=completo --limite=500
+# Ejecución estándar
+python scripts/[nombre_del_script].py --input "valor"
 ```
 
----
+## 8. Checklist de Pre-Ejecución
+- [ ] Variables de entorno configuradas en `.env`
+- [ ] Dependencias instaladas (`pip install -r requirements.txt`)
+- [ ] Archivos de entrada disponibles y validados
+- [ ] Permisos necesarios otorgados (API, archivos, etc.)
 
-## 8. Historial de Cambios
+## 9. Checklist Post-Ejecución
+- [ ] Salidas generadas correctamente
+- [ ] Logs revisados para errores/advertencias
+- [ ] Resultados validados contra criterios esperados
+- [ ] Directiva actualizada con nuevos aprendizajes (si aplica)
 
-| Fecha      | Cambio                                        | Motivo                               |
-|------------|-----------------------------------------------|--------------------------------------|
-| YYYY-MM-DD | Creación inicial de la directiva              | Primera implementación               |
-| YYYY-MM-DD | Agregada restricción #1 (rate limit)          | Error 429 en producción              |
+## 10. Notas Adicionales
+Cualquier contexto que no encaje en las secciones anteriores.
+
+[Placeholder para decisiones de diseño, referencias a documentación externa, o advertencias de seguridad].

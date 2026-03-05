@@ -1,0 +1,2 @@
+TABLA profiles: avatar_url, company_id, created_at, face_vector, full_name, hourly_rate_base, id, national_id, night_surcharge_pct, phone_number, pin_code, sunday_holiday_surcharge_pct, updated_at
+TABLA time_entries: clock_in, clock_out, company_id, created_at, date, edited_manually, event_type, geo_snapshot, id, is_verified, metadata, notes, profile_id, status, total_hours, updated_at
