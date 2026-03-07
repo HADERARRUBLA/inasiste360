@@ -17,6 +17,39 @@ export const BranchManagement: React.FC = () => {
         radius_limit: 100
     });
 
+    const [isGettingLocation, setIsGettingLocation] = useState(false);
+
+    const getGeolocation = () => {
+        setIsGettingLocation(true);
+        if (!navigator.geolocation) {
+            alert('Tu navegador no soporta geolocalización.');
+            setIsGettingLocation(false);
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                // Set with a reasonable precision for attendance checking
+                const latStr = latitude.toFixed(15);
+                const lngStr = longitude.toFixed(15);
+                setFormData(prev => ({ ...prev, lat_long: `${latStr}, ${lngStr}` }));
+                setIsGettingLocation(false);
+            },
+            (error) => {
+                console.error('Error getting location:', error);
+                let errorMsg = 'No se pudo obtener la ubicación.';
+                if (error.code === 1) errorMsg = 'Permiso de ubicación denegado. Por favor, habilita el GPS en tu navegador.';
+                else if (error.code === 2) errorMsg = 'Ubicación no disponible.';
+                else if (error.code === 3) errorMsg = 'Tiempo de espera agotado.';
+
+                alert(errorMsg);
+                setIsGettingLocation(false);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    };
+
     const fetchBranches = async () => {
         setLoading(true);
         try {
@@ -148,13 +181,25 @@ export const BranchManagement: React.FC = () => {
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
                                     <Navigation className="w-3 h-3" /> Coordenadas Lat, Long
                                 </label>
-                                <input
-                                    required
-                                    value={formData.lat_long}
-                                    onChange={e => setFormData({ ...formData, lat_long: e.target.value })}
-                                    className="w-full px-5 py-4 border-2 border-muted bg-background outline-none focus:border-primary rounded-2xl font-mono"
-                                    placeholder="6.1234, -75.5678"
-                                />
+                                <div className="relative group">
+                                    <input
+                                        required
+                                        value={formData.lat_long}
+                                        onChange={e => setFormData({ ...formData, lat_long: e.target.value })}
+                                        className="w-full px-5 py-4 border-2 border-muted bg-background outline-none focus:border-primary rounded-2xl font-mono text-sm pr-16"
+                                        placeholder="6.1234, -75.5678"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={getGeolocation}
+                                        disabled={isGettingLocation}
+                                        className={`absolute right-2 top-2 p-3 rounded-xl transition-all ${isGettingLocation ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
+                                            }`}
+                                        title="Obtener ubicación actual"
+                                    >
+                                        <Navigation className={`w-4 h-4 ${isGettingLocation ? 'animate-spin' : ''}`} />
+                                    </button>
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">

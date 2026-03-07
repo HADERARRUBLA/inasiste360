@@ -52,6 +52,8 @@
 | Fecha | Error Detectado | Causa Raíz | Solución/Parche Aplicado |
 |-------|-----------------|------------|--------------------------|
 | 04/03 | N/A | Inicio de tarea | N/A |
+| 04/03 | 403 Forbidden | Token MCP sin permisos repo | Crear repo manualmente y usar el link proporcionado por el usuario |
+| 07/03 | 404 Not Found (Vercel) | App en subdirectorio `frontend/` sin config raíz | Crear `vercel.json` en raíz con comandos de build apuntando a `frontend/` |
 
 ## 7. Ejemplos de Uso
 
