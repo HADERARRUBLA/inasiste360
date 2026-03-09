@@ -26,8 +26,10 @@ Vercel guarda un historial. Podemos volver a una versión anterior con un solo c
 2. Busca la versión que funcionaba (hace 10 min, ayer, etc.).
 3. Haz clic en los tres puntos y elige **Promote to Production**. Esto restaurará la versión anterior en segundos.
 
-### B. Pruebas Locales:
-Antes de subir nada a GitHub, ejecutaré `npm run build` localmente para asegurar que no hay errores técnicos que detengan el despliegue.
+### C. Seguridad de Base de Datos (RLS):
+Cada vez que una operación falle con un error de "Row Level Security (RLS)", debemos:
+1. Revisar si la tabla tiene políticas de `INSERT`, `UPDATE` o `DELETE` activas.
+2. Aplicar la política correspondiente en Supabase antes de subir el cambio al frontend.
 
 ## 4. Próximos Pasos (Propuesta)
 - [ ] Configurar rama de `desarrollo`.
