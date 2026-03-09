@@ -494,7 +494,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             {viewTab === 'analytics' ? (
                 <>
                     {/* KPI Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                         <StatCard
                             title="Total Empleados"
                             value={`${profiles.length}`}
@@ -510,10 +510,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                             trend="up"
                         />
                         <StatCard
+                            title="Alertas Hoy"
+                            value={`${stats.alerts.length}`}
+                            subValue="Novedades detectadas"
+                            icon={<CheckCircle className={`w-6 h-6 ${stats.alerts.length > 0 ? 'text-red-500' : 'text-green-500'}`} />}
+                            trend={stats.alerts.length > 0 ? 'down' : 'up'}
+                        />
+                        <StatCard
                             title="Coste Estimado"
                             value={`$${stats.estimatedCost.toLocaleString()}`}
                             subValue="Nómina proyectada"
-                            icon={<TrendingUp className="w-6 h-6 text-green-500" />}
+                            icon={<TrendingUp className="w-6 h-6 text-amber-500" />}
                             trend="up"
                         />
                         <StatCard
@@ -558,12 +565,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                             </div>
 
                             <div className="space-y-4 flex-1">
-                                {stats.alerts.filter(a => a.time !== '--:--' || a.type.includes('Llegada')).length === 0 ? (
+                                {stats.alerts.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-30 grayscale">
                                         <CheckCircle className="w-12 h-12 mb-2" />
                                         <p className="text-[10px] font-black uppercase tracking-widest">Sin alertas</p>
                                     </div>
-                                ) : stats.alerts.slice(0, 5).map((alert: any, i: number) => (
+                                ) : stats.alerts.map((alert: any, i: number) => (
                                     <div key={i} className={`p-4 rounded-2xl border-l-4 flex items-center justify-between transition-all hover:translate-x-1 ${alert.severity === 'error' ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-500'}`}>
                                         <div>
                                             <p className="text-[11px] font-black uppercase leading-tight">{alert.name}</p>
