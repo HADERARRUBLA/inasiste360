@@ -8,6 +8,7 @@ export const AdminManagement: React.FC = () => {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [loading, setLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
     const [formData, setFormData] = useState({
@@ -48,26 +49,50 @@ export const AdminManagement: React.FC = () => {
         fetchData();
     }, []);
 
+    const resetForm = () => {
+        setFormData({ full_name: '', national_id: '', company_id: '', role: 'admin', pin_code: '' });
+        setIsAdding(false);
+        setEditingId(null);
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatus(null);
         try {
+            const payload: any = {
+                ...formData,
+                national_id: formData.national_id.trim()
+            };
+
+            if (editingId) {
+                payload.id = editingId;
+            }
+
             const { error } = await supabase
                 .from('profiles')
-                .upsert([{
-                    ...formData,
-                    national_id: formData.national_id.trim()
-                }]);
+                .upsert([payload]);
 
             if (error) throw error;
 
-            setStatus({ type: 'success', msg: 'Administrador registrado con éxito.' });
-            setIsAdding(false);
-            setFormData({ full_name: '', national_id: '', company_id: '', role: 'admin', pin_code: '' });
+            setStatus({ type: 'success', msg: editingId ? 'Administrador actualizado con éxito.' : 'Administrador registrado con éxito.' });
+            resetForm();
             fetchData();
         } catch (err: any) {
-            setStatus({ type: 'error', msg: 'Error al registrar administrador: ' + err.message });
+            setStatus({ type: 'error', msg: 'Error al procesar: ' + err.message });
         }
+    };
+
+    const handleEdit = (admin: any) => {
+        setFormData({
+            full_name: admin.full_name || '',
+            national_id: admin.national_id || '',
+            company_id: admin.company_id || '',
+            role: admin.role || 'admin',
+            pin_code: admin.pin_code || ''
+        });
+        setEditingId(admin.id);
+        setIsAdding(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDelete = async (id: string) => {
@@ -107,9 +132,12 @@ export const AdminManagement: React.FC = () => {
 
             {isAdding && (
                 <div className="bg-card border rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
-                    <button onClick={() => setIsAdding(false)} className="absolute top-6 right-6 p-2 hover:bg-muted rounded-full transition-colors">
+                    <button onClick={resetForm} className="absolute top-6 right-6 p-2 hover:bg-muted rounded-full transition-colors">
                         <X className="w-6 h-6" />
                     </button>
+                    <h3 className="text-xl font-black uppercase italic mb-8 flex items-center gap-3">
+                        {editingId ? <><Save className="w-6 h-6 text-primary" /> Editar Administrador</> : <><UserPlus className="w-6 h-6 text-primary" /> Nuevo Administrador</>}
+                    </h3>
                     <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-6">
                             <div className="space-y-2">
@@ -163,6 +191,7 @@ export const AdminManagement: React.FC = () => {
                                     className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
                                 >
                                     <option value="">Seleccionar sede...</option>
+                                    <option value="">GLOBAL / TODAS</option>
                                     {companies.map(c => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
@@ -188,9 +217,12 @@ export const AdminManagement: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="md:col-span-2 flex justify-end">
+                        <div className="md:col-span-2 flex justify-end gap-4">
+                            <button type="button" onClick={resetForm} className="px-8 py-4 bg-muted/20 text-muted-foreground rounded-2xl font-black transition-all active:scale-95">
+                                CANCELAR
+                            </button>
                             <button type="submit" className="flex items-center gap-3 px-12 py-4 bg-primary text-primary-foreground rounded-2xl font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
-                                <Save className="w-5 h-5" /> REGISTRAR ACCESO
+                                <Save className="w-5 h-5" /> {editingId ? 'ACTUALIZAR DATOS' : 'REGISTRAR ACCESO'}
                             </button>
                         </div>
                     </form>
@@ -211,7 +243,7 @@ export const AdminManagement: React.FC = () => {
                     </thead>
                     <tbody className="divide-y">
                         {loading ? (
-                            <tr><td colSpan={5} className="px-10 py-20 text-center animate-pulse font-black text-xs uppercase tracking-widest">Sincronizando Accesos...</td></tr>
+                            <tr><td colSpan={6} className="px-10 py-20 text-center animate-pulse font-black text-xs uppercase tracking-widest">Sincronizando Accesos...</td></tr>
                         ) : admins.map(admin => (
                             <tr key={admin.id} className="hover:bg-primary/5 transition-colors group">
                                 <td className="px-10 py-6 font-black text-lg">{admin.full_name}</td>
@@ -226,8 +258,23 @@ export const AdminManagement: React.FC = () => {
                                         {admin.role}
                                     </span>
                                 </td>
-                                <td className="px-10 py-6 text-right text-red-500 font-black cursor-pointer hover:underline" onClick={() => handleDelete(admin.id)}>
-                                    <Trash2 className="w-4 h-4 ml-auto" />
+                                <td className="px-10 py-6 text-right">
+                                    <div className="flex items-center justify-end gap-4">
+                                        <button
+                                            onClick={() => handleEdit(admin)}
+                                            className="p-2 text-primary hover:bg-primary/10 rounded-xl transition-all"
+                                            title="Editar"
+                                        >
+                                            <Save className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(admin.id)}
+                                            className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                            title="Eliminar"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
