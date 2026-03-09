@@ -1,6 +1,16 @@
 export type EventType = 'in' | 'out' | 'breakfast' | 'lunch' | 'active_pause' | 'other';
 export type UserRole = 'superadmin' | 'admin' | 'employee';
 
+export interface DaySchedule {
+    start: string;
+    end: string;
+    active: boolean;
+}
+
+export interface WeeklySchedule {
+    [key: string]: DaySchedule;
+}
+
 export interface Company {
     id: string;
     name: string;
@@ -30,6 +40,7 @@ export interface Profile {
     use_custom_schedule?: boolean;
     work_start_time?: string;
     work_end_time?: string;
+    work_schedule?: WeeklySchedule;
     role: UserRole;
 }
 
