@@ -7,6 +7,8 @@ export interface Company {
     address?: string;
     lat_long: string | null;
     radius_limit: number;
+    night_shift_start_time?: string;
+    extra_day_start_time?: string;
     created_at?: string;
 }
 
@@ -20,8 +22,14 @@ export interface Profile {
     face_vector?: number[];
     profile_photo?: string | null;
     hourly_rate_base: number;
-    night_surcharge_pct: number;
-    sunday_holiday_surcharge_pct: number;
+    hourly_rate_extra_day?: number;
+    hourly_rate_extra_night?: number;
+    hourly_rate_sunday_holiday?: number;
+    hourly_rate_sunday_holiday_extra_day?: number;
+    hourly_rate_sunday_holiday_extra_night?: number;
+    use_custom_schedule?: boolean;
+    work_start_time?: string;
+    work_end_time?: string;
     role: UserRole;
 }
 

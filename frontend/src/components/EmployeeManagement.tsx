@@ -25,7 +25,15 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         national_id: '',
         phone_number: '',
         pin_code: '',
-        hourly_rate_base: 20000,
+        hourly_rate_base: 0,
+        hourly_rate_extra_day: 0,
+        hourly_rate_extra_night: 0,
+        hourly_rate_sunday_holiday: 0,
+        hourly_rate_sunday_holiday_extra_day: 0,
+        hourly_rate_sunday_holiday_extra_night: 0,
+        use_custom_schedule: false,
+        work_start_time: '08:00',
+        work_end_time: '17:00',
         face_vector: null as number[] | null,
         profile_photo: null as string | null,
         company_id: ''
@@ -82,7 +90,15 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             national_id: profile.national_id || '',
             phone_number: profile.phone_number || '',
             pin_code: profile.pin_code || '',
-            hourly_rate_base: profile.hourly_rate_base || 20000,
+            hourly_rate_base: profile.hourly_rate_base || 0,
+            hourly_rate_extra_day: profile.hourly_rate_extra_day || 0,
+            hourly_rate_extra_night: profile.hourly_rate_extra_night || 0,
+            hourly_rate_sunday_holiday: profile.hourly_rate_sunday_holiday || 0,
+            hourly_rate_sunday_holiday_extra_day: profile.hourly_rate_sunday_holiday_extra_day || 0,
+            hourly_rate_sunday_holiday_extra_night: profile.hourly_rate_sunday_holiday_extra_night || 0,
+            use_custom_schedule: profile.use_custom_schedule || false,
+            work_start_time: profile.work_start_time || '08:00',
+            work_end_time: profile.work_end_time || '17:00',
             face_vector: profile.face_vector || null,
             profile_photo: profile.profile_photo || null,
             company_id: profile.company_id || ''
@@ -149,7 +165,15 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 national_id: '',
                 phone_number: '',
                 pin_code: '',
-                hourly_rate_base: 20000,
+                hourly_rate_base: 0,
+                hourly_rate_extra_day: 0,
+                hourly_rate_extra_night: 0,
+                hourly_rate_sunday_holiday: 0,
+                hourly_rate_sunday_holiday_extra_day: 0,
+                hourly_rate_sunday_holiday_extra_night: 0,
+                use_custom_schedule: false,
+                work_start_time: '08:00',
+                work_end_time: '17:00',
                 face_vector: null,
                 profile_photo: null
             }));
@@ -228,6 +252,117 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                 className="w-full px-5 py-3.5 border rounded-2xl bg-background focus:ring-4 focus:ring-primary/10 outline-none transition-all font-bold"
                                 placeholder="Ej: 3001234567"
                             />
+                        </div>
+
+                        {/* Ficha de Nómina - Valores de Hora */}
+                        <div className="md:col-span-2 p-8 bg-primary/5 border rounded-[2rem] space-y-6">
+                            <div className="flex items-center justify-between border-b pb-4 border-primary/10">
+                                <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                                    <Save className="w-4 h-4" /> Configuración de Valores de Nómina
+                                </h4>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Hora Ordinaria ($)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.hourly_rate_base}
+                                        onChange={e => setFormData({ ...formData, hourly_rate_base: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Extra Diurna ($)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.hourly_rate_extra_day}
+                                        onChange={e => setFormData({ ...formData, hourly_rate_extra_day: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Extra Nocturna ($)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.hourly_rate_extra_night}
+                                        onChange={e => setFormData({ ...formData, hourly_rate_extra_night: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Dominical/Festivo ($)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.hourly_rate_sunday_holiday}
+                                        onChange={e => setFormData({ ...formData, hourly_rate_sunday_holiday: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Extra Dom. Diurna ($)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.hourly_rate_sunday_holiday_extra_day}
+                                        onChange={e => setFormData({ ...formData, hourly_rate_sunday_holiday_extra_day: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Extra Dom. Nocturna ($)</label>
+                                    <input
+                                        type="number"
+                                        value={formData.hourly_rate_sunday_holiday_extra_night}
+                                        onChange={e => setFormData({ ...formData, hourly_rate_sunday_holiday_extra_night: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Gestión de Jornada */}
+                        <div className="md:col-span-2 p-8 bg-muted/10 border-2 border-primary/5 rounded-[2rem] space-y-6">
+                            <div className="flex items-center justify-between">
+                                <h4 className="text-sm font-black uppercase tracking-widest text-foreground flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-primary" /> Definición de Jornada Laboral
+                                </h4>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="customSchedule"
+                                        className="w-4 h-4 accent-primary"
+                                        checked={formData.use_custom_schedule}
+                                        onChange={e => setFormData({ ...formData, use_custom_schedule: e.target.checked })}
+                                    />
+                                    <label htmlFor="customSchedule" className="text-[10px] font-black uppercase text-muted-foreground cursor-pointer">Usar Horario Personalizado</label>
+                                </div>
+                            </div>
+
+                            {formData.use_custom_schedule ? (
+                                <div className="grid grid-cols-2 gap-8 animate-in fade-in zoom-in duration-300">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Hora inicio Jornada</label>
+                                        <input
+                                            type="time"
+                                            value={formData.work_start_time}
+                                            onChange={e => setFormData({ ...formData, work_start_time: e.target.value })}
+                                            className="w-full px-5 py-4 border rounded-2xl bg-background focus:ring-4 focus:ring-primary/10 transition-all font-black text-xl"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Hora fin Jornada</label>
+                                        <input
+                                            type="time"
+                                            value={formData.work_end_time}
+                                            onChange={e => setFormData({ ...formData, work_end_time: e.target.value })}
+                                            className="w-full px-5 py-4 border rounded-2xl bg-background focus:ring-4 focus:ring-primary/10 transition-all font-black text-xl"
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-6 bg-white border rounded-2xl text-center border-dashed">
+                                    <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest italic">Este colaborador sigue el horario estándar definido para la sede.</p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="md:col-span-2 p-8 bg-muted/20 border-2 border-dashed rounded-3xl flex flex-col items-center gap-6">
