@@ -113,49 +113,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             else if (e.event_type === 'in') activeNow.add(e.profile_id);
         });
 
-        // 3. Punctuality & Late Alerts
+        // 3. Punctuality & Attendance Alerts
         let latesToday = 0;
         const alertEntries: any[] = [];
-
-        const firstInsToday = entriesToday
-            .filter(e => e.event_type === 'in' && !e.metadata?.is_return)
-            .reduce((acc: any, curr) => {
-                if (!acc[curr.profile_id] || new Date(curr.created_at!) < new Date(acc[curr.profile_id].created_at!)) {
-                    acc[curr.profile_id] = curr;
-                }
-                return acc;
-            }, {});
 
         profiles.forEach(p => {
             const dayCode = dayMap[now.getDay()];
             const profileSched = p.use_custom_schedule ? (p.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
 
             if (profileSched?.active) {
-                const firstIn = firstInsToday[p.id];
-                if (firstIn) {
-                    const inTime = new Date(firstIn.created_at!);
-                    const [schedH, schedM] = profileSched.start.split(':').map(Number);
-                    const schedTime = new Date(inTime);
-                    schedTime.setHours(schedH, schedM, 0, 0);
+                const userEntriesToday = entriesToday.filter(e => e.profile_id === p.id);
+                const hasArrivedToday = userEntriesToday.length > 0;
 
-                    if (inTime > schedTime) {
-                        latesToday++;
-                        const diffMin = Math.round((inTime.getTime() - schedTime.getTime()) / 60000);
-                        alertEntries.push({
-                            name: p.full_name,
-                            type: 'Llegada Tarde',
-                            desc: `${diffMin} min tarde`,
-                            time: inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            severity: 'error'
-                        });
+                // Find the very first entry (could be any type)
+                const firstAnyEntry = [...userEntriesToday].sort((a, b) =>
+                    new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime()
+                )[0];
+
+                // Also specific first 'in' for punctuality
+                const firstIn = userEntriesToday
+                    .filter(e => e.event_type === 'in' && !e.metadata?.is_return)
+                    .sort((a, b) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime())[0];
+
+                if (hasArrivedToday) {
+                    // They are present. Let's check if they were late.
+                    // We use either the first 'in' OR the first any-event if no 'in' exists
+                    const referenceIn = firstIn || firstAnyEntry;
+                    if (referenceIn) {
+                        const inTime = new Date(referenceIn.created_at!);
+                        const [schedH, schedM] = profileSched.start.split(':').map(Number);
+                        const schedTime = new Date(inTime);
+                        schedTime.setHours(schedH, schedM, 0, 0);
+
+                        // If they arrived more than 1 minute after schedule
+                        if (inTime.getTime() > (schedTime.getTime() + 60000)) {
+                            latesToday++;
+                            const diffMin = Math.round((inTime.getTime() - schedTime.getTime()) / 60000);
+                            alertEntries.push({
+                                name: p.full_name,
+                                type: 'Llegada Tarde',
+                                desc: `${diffMin} min tarde (Entró ${inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+                                time: inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                severity: 'error'
+                            });
+                        }
                     }
                 } else {
-                    // Check if they are ALREADY late (should have arrived by now)
+                    // Check if they are ABSENT (should have arrived by now)
                     const [schedH, schedM] = profileSched.start.split(':').map(Number);
                     const deadline = new Date(now);
                     deadline.setHours(schedH, schedM, 0, 0);
 
-                    if (now > deadline && !activeNow.has(p.id)) {
+                    if (now > deadline) {
                         alertEntries.push({
                             name: p.full_name,
                             type: 'Inasistencia / Retraso',
