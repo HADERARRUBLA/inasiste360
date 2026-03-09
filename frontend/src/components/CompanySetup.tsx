@@ -7,6 +7,26 @@ interface CompanySetupProps {
     onSave?: () => void;
 }
 
+const DEFAULT_SCHEDULE = {
+    mon: { start: '08:00', end: '17:00', active: true },
+    tue: { start: '08:00', end: '17:00', active: true },
+    wed: { start: '08:00', end: '17:00', active: true },
+    thu: { start: '08:00', end: '17:00', active: true },
+    fri: { start: '08:00', end: '17:00', active: true },
+    sat: { start: '08:00', end: '13:00', active: true },
+    sun: { start: '08:00', end: '13:00', active: false },
+};
+
+const dayNames: { [key: string]: string } = {
+    mon: 'Lunes',
+    tue: 'Martes',
+    wed: 'Miércoles',
+    thu: 'Jueves',
+    fri: 'Viernes',
+    sat: 'Sábado',
+    sun: 'Domingo',
+};
+
 export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave }) => {
     const [company, setCompany] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -25,7 +45,12 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                 .eq('id', companyId)
                 .single();
             if (fetchErr) throw fetchErr;
-            setCompany(data);
+            setCompany({
+                ...data,
+                work_schedule: data.work_schedule && Object.keys(data.work_schedule).length > 0
+                    ? { ...DEFAULT_SCHEDULE, ...data.work_schedule }
+                    : { ...DEFAULT_SCHEDULE }
+            });
         } catch (err: any) {
             console.error('Error fetching company:', err);
             setError(err.message || 'Error al conectar con el servidor.');
@@ -53,7 +78,8 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                     lat_long: company.lat_long,
                     radius_limit: company.radius_limit,
                     night_shift_start_time: company.night_shift_start_time,
-                    extra_day_start_time: company.extra_day_start_time
+                    extra_day_start_time: company.extra_day_start_time,
+                    work_schedule: company.work_schedule
                 })
                 .eq('id', company.id);
 
@@ -150,31 +176,96 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                     </div>
                 </div>
 
-                {/* Global Schedule Config */}
-                <div className="bg-primary/5 border border-primary/10 rounded-[2.5rem] p-10 shadow-xl space-y-6 md:col-span-1">
-                    <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
-                        <Save className="w-4 h-4" /> Horario Global de Sede
-                    </h4>
+                {/* Global Weekly Schedule Matrix */}
+                <div className="bg-primary/5 border border-primary/10 rounded-[2.5rem] p-8 shadow-xl space-y-6 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                                <Save className="w-4 h-4" /> Horario Semanal Estándar
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight italic mt-1">Este horario se aplicará a todos los empleados que no tengan un horario personalizado activo.</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="space-y-1">
+                                <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest pl-1 text-center block italic">Ext. Diurna</label>
+                                <input
+                                    type="time"
+                                    value={company.extra_day_start_time || '06:00'}
+                                    onChange={e => setCompany({ ...company, extra_day_start_time: e.target.value })}
+                                    className="px-3 py-2 border-2 border-muted bg-background rounded-xl focus:border-primary outline-none transition-all font-black text-xs"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[8px] font-black uppercase text-muted-foreground tracking-widest pl-1 text-center block italic">Rec. Nocturno</label>
+                                <input
+                                    type="time"
+                                    value={company.night_shift_start_time || '21:00'}
+                                    onChange={e => setCompany({ ...company, night_shift_start_time: e.target.value })}
+                                    className="px-3 py-2 border-2 border-muted bg-background rounded-xl focus:border-primary outline-none transition-all font-black text-xs"
+                                />
+                            </div>
+                        </div>
+                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Inició Hora Extra Diurna</label>
-                            <input
-                                type="time"
-                                value={company.extra_day_start_time || '06:00'}
-                                onChange={e => setCompany({ ...company, extra_day_start_time: e.target.value })}
-                                className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-black text-lg"
-                            />
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        <div className="grid grid-cols-12 gap-4 px-4 py-2 text-[8px] font-black uppercase text-muted-foreground tracking-widest border-b border-primary/5">
+                            <div className="col-span-3">Día de la Semana</div>
+                            <div className="col-span-1 text-center">Laboral</div>
+                            <div className="col-span-4 text-center">Entrada General</div>
+                            <div className="col-span-4 text-center">Salida General</div>
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Inicio Recargo Nocturno</label>
-                            <input
-                                type="time"
-                                value={company.night_shift_start_time || '21:00'}
-                                onChange={e => setCompany({ ...company, night_shift_start_time: e.target.value })}
-                                className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-black text-lg"
-                            />
-                        </div>
+                        {Object.keys(DEFAULT_SCHEDULE).map((day) => {
+                            const dayData = company.work_schedule?.[day] || (DEFAULT_SCHEDULE as any)[day];
+                            return (
+                                <div key={day} className={`grid grid-cols-12 gap-4 items-center p-3 border rounded-2xl transition-all ${dayData?.active ? 'bg-background border-primary/10' : 'opacity-40 bg-muted/5 border-transparent'}`}>
+                                    <div className="col-span-3 font-black text-[11px] uppercase tracking-tight">{dayNames[day]}</div>
+                                    <div className="col-span-1 flex justify-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={dayData?.active || false}
+                                            onChange={e => {
+                                                const newSched = {
+                                                    ...company.work_schedule,
+                                                    [day]: { ...(dayData || {}), active: e.target.checked }
+                                                };
+                                                setCompany({ ...company, work_schedule: newSched });
+                                            }}
+                                            className="w-4 h-4 accent-primary"
+                                        />
+                                    </div>
+                                    <div className="col-span-4">
+                                        <input
+                                            type="time"
+                                            disabled={!dayData?.active}
+                                            value={dayData?.start || '08:00'}
+                                            onChange={e => {
+                                                const newSched = {
+                                                    ...company.work_schedule,
+                                                    [day]: { ...(dayData || {}), start: e.target.value }
+                                                };
+                                                setCompany({ ...company, work_schedule: newSched });
+                                            }}
+                                            className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                    <div className="col-span-4">
+                                        <input
+                                            type="time"
+                                            disabled={!dayData?.active}
+                                            value={dayData?.end || '17:00'}
+                                            onChange={e => {
+                                                const newSched = {
+                                                    ...company.work_schedule,
+                                                    [day]: { ...(dayData || {}), end: e.target.value }
+                                                };
+                                                setCompany({ ...company, work_schedule: newSched });
+                                            }}
+                                            className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 

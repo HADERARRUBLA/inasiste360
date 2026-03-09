@@ -120,7 +120,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             use_custom_schedule: profile.use_custom_schedule || false,
             work_start_time: profile.work_start_time || '08:00',
             work_end_time: profile.work_end_time || '17:00',
-            work_schedule: profile.work_schedule || { ...DEFAULT_SCHEDULE },
+            work_schedule: { ...DEFAULT_SCHEDULE, ...(profile.work_schedule || {}) },
             face_vector: profile.face_vector || null,
             profile_photo: profile.profile_photo || null,
             company_id: profile.company_id || ''
@@ -368,55 +368,58 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                         <div className="col-span-4 text-center">Entrada</div>
                                         <div className="col-span-4 text-center">Salida</div>
                                     </div>
-                                    {Object.keys(DEFAULT_SCHEDULE).map((day) => (
-                                        <div key={day} className={`grid grid-cols-12 gap-4 items-center p-3 border rounded-2xl transition-all ${formData.work_schedule[day].active ? 'bg-primary/5 border-primary/10' : 'opacity-40 bg-muted/5 border-transparent'}`}>
-                                            <div className="col-span-3 font-black text-[11px] uppercase tracking-tight">{dayNames[day]}</div>
-                                            <div className="col-span-1 flex justify-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formData.work_schedule[day].active}
-                                                    onChange={e => {
-                                                        const newSched = {
-                                                            ...formData.work_schedule,
-                                                            [day]: { ...formData.work_schedule[day], active: e.target.checked }
-                                                        };
-                                                        setFormData({ ...formData, work_schedule: newSched });
-                                                    }}
-                                                    className="w-4 h-4 accent-primary"
-                                                />
+                                    {Object.keys(DEFAULT_SCHEDULE).map((day) => {
+                                        const dayData = formData.work_schedule?.[day] || (DEFAULT_SCHEDULE as any)[day];
+                                        return (
+                                            <div key={day} className={`grid grid-cols-12 gap-4 items-center p-3 border rounded-2xl transition-all ${dayData?.active ? 'bg-primary/5 border-primary/10' : 'opacity-40 bg-muted/5 border-transparent'}`}>
+                                                <div className="col-span-3 font-black text-[11px] uppercase tracking-tight">{dayNames[day]}</div>
+                                                <div className="col-span-1 flex justify-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={dayData?.active || false}
+                                                        onChange={e => {
+                                                            const newSched = {
+                                                                ...formData.work_schedule,
+                                                                [day]: { ...(dayData || {}), active: e.target.checked }
+                                                            };
+                                                            setFormData({ ...formData, work_schedule: newSched });
+                                                        }}
+                                                        className="w-4 h-4 accent-primary"
+                                                    />
+                                                </div>
+                                                <div className="col-span-4">
+                                                    <input
+                                                        type="time"
+                                                        disabled={!dayData?.active}
+                                                        value={dayData?.start || '08:00'}
+                                                        onChange={e => {
+                                                            const newSched = {
+                                                                ...formData.work_schedule,
+                                                                [day]: { ...(dayData || {}), start: e.target.value }
+                                                            };
+                                                            setFormData({ ...formData, work_schedule: newSched });
+                                                        }}
+                                                        className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                                    />
+                                                </div>
+                                                <div className="col-span-4">
+                                                    <input
+                                                        type="time"
+                                                        disabled={!dayData?.active}
+                                                        value={dayData?.end || '17:00'}
+                                                        onChange={e => {
+                                                            const newSched = {
+                                                                ...formData.work_schedule,
+                                                                [day]: { ...(dayData || {}), end: e.target.value }
+                                                            };
+                                                            setFormData({ ...formData, work_schedule: newSched });
+                                                        }}
+                                                        className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="col-span-4">
-                                                <input
-                                                    type="time"
-                                                    disabled={!formData.work_schedule[day].active}
-                                                    value={formData.work_schedule[day].start}
-                                                    onChange={e => {
-                                                        const newSched = {
-                                                            ...formData.work_schedule,
-                                                            [day]: { ...formData.work_schedule[day], start: e.target.value }
-                                                        };
-                                                        setFormData({ ...formData, work_schedule: newSched });
-                                                    }}
-                                                    className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
-                                                />
-                                            </div>
-                                            <div className="col-span-4">
-                                                <input
-                                                    type="time"
-                                                    disabled={!formData.work_schedule[day].active}
-                                                    value={formData.work_schedule[day].end}
-                                                    onChange={e => {
-                                                        const newSched = {
-                                                            ...formData.work_schedule,
-                                                            [day]: { ...formData.work_schedule[day], end: e.target.value }
-                                                        };
-                                                        setFormData({ ...formData, work_schedule: newSched });
-                                                    }}
-                                                    className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="p-6 bg-white border rounded-2xl text-center border-dashed">
