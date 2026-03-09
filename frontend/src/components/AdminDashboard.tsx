@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { TimeEntry } from '../types';
 import {
     FileDown, Search, Filter, Users, Clock,
-    Coffee, CheckCircle, TrendingUp,
+    CheckCircle, TrendingUp,
     MoreHorizontal, ArrowUpRight, ArrowDownRight, Trash2
 } from 'lucide-react';
 import {
@@ -14,6 +14,10 @@ import {
 interface AdminDashboardProps {
     companyId: string | null;
 }
+
+const dayMap: Record<number, string> = {
+    0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat'
+};
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => {
     const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -26,11 +30,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
     });
     const [selectedProfileId, setSelectedProfileId] = useState<string>('all');
 
+    const [company, setCompany] = useState<any>(null);
+
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
             try {
                 if (!companyId) return;
+
+                // Fetch Company Settings
+                const { data: compData } = await supabase
+                    .from('companies')
+                    .select('*')
+                    .eq('id', companyId)
+                    .single();
+                setCompany(compData);
 
                 // Fetch Time Entries
                 const { data: entryData, error: entryError } = await supabase
@@ -42,10 +56,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
                 if (entryError) throw entryError;
                 setEntries(entryData || []);
 
-                // Fetch Profiles for filter
+                // Fetch Full Profiles
                 const { data: profileData, error: profileError } = await supabase
                     .from('profiles')
-                    .select('id, full_name, national_id')
+                    .select('*')
                     .eq('company_id', companyId)
                     .order('full_name');
 
@@ -62,9 +76,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
     }, [companyId]);
 
     const stats = useMemo(() => {
-        const today = new Date().toLocaleDateString('en-CA');
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        const now = new Date();
 
-        // Filter entries based on active filters
+        // 1. Basic Filtering
         const filteredForStats = entries.filter(e => {
             const date = e.date || e.created_at?.split('T')[0];
             const matchesDate = date && date >= dateRange.start && date <= dateRange.end;
@@ -72,12 +87,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
             return matchesDate && matchesProfile;
         });
 
-        // Current status (only for today)
-        const entriesToday = entries.filter(e => (e.date || e.created_at?.split('T')[0]) === today);
+        const entriesToday = entries.filter(e => (e.date || e.created_at?.split('T')[0]) === todayStr);
+
+        // 2. Active Now Calculation
         const activeNow = new Set();
         const onBreakNow = new Set();
-
-        // Calculate current status per user
         const latestPerUser = entriesToday.reduce((acc: any, curr) => {
             if (!curr.created_at) return acc;
             if (!acc[curr.profile_id] || new Date(curr.created_at) > new Date(acc[curr.profile_id].created_at)) {
@@ -87,15 +101,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
         }, {});
 
         Object.values(latestPerUser).forEach((e: any) => {
-            if (['breakfast', 'lunch', 'active_pause'].includes(e.event_type)) {
-                onBreakNow.add(e.profile_id);
-            } else if (e.event_type === 'in') {
-                activeNow.add(e.profile_id);
+            if (['breakfast', 'lunch', 'active_pause'].includes(e.event_type)) onBreakNow.add(e.profile_id);
+            else if (e.event_type === 'in') activeNow.add(e.profile_id);
+        });
+
+        // 3. Punctuality & Late Alerts
+        let latesToday = 0;
+        const alertEntries: any[] = [];
+
+        const firstInsToday = entriesToday
+            .filter(e => e.event_type === 'in' && !e.metadata?.is_return)
+            .reduce((acc: any, curr) => {
+                if (!acc[curr.profile_id] || new Date(curr.created_at!) < new Date(acc[curr.profile_id].created_at!)) {
+                    acc[curr.profile_id] = curr;
+                }
+                return acc;
+            }, {});
+
+        profiles.forEach(p => {
+            const dayCode = dayMap[now.getDay()];
+            const profileSched = p.use_custom_schedule ? (p.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+
+            if (profileSched?.active) {
+                const firstIn = firstInsToday[p.id];
+                if (firstIn) {
+                    const inTime = new Date(firstIn.created_at!);
+                    const [schedH, schedM] = profileSched.start.split(':').map(Number);
+                    const schedTime = new Date(inTime);
+                    schedTime.setHours(schedH, schedM, 0, 0);
+
+                    if (inTime > schedTime) {
+                        latesToday++;
+                        const diffMin = Math.round((inTime.getTime() - schedTime.getTime()) / 60000);
+                        alertEntries.push({
+                            name: p.full_name,
+                            type: 'Llegada Tarde',
+                            desc: `${diffMin} min tarde`,
+                            time: inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            severity: 'error'
+                        });
+                    }
+                } else {
+                    // Check if they are ALREADY late (should have arrived by now)
+                    const [schedH, schedM] = profileSched.start.split(':').map(Number);
+                    const deadline = new Date(now);
+                    deadline.setHours(schedH, schedM, 0, 0);
+
+                    if (now > deadline && !activeNow.has(p.id)) {
+                        alertEntries.push({
+                            name: p.full_name,
+                            type: 'Inasistencia / Retraso',
+                            desc: `Debió entrar a las ${profileSched.start}`,
+                            time: '--:--',
+                            severity: 'warning'
+                        });
+                    }
+                }
             }
         });
 
-        // Calculate total hours for filtered set
+        // 4. Payroll Calculation (Estimated)
+        let estimatedCost = 0;
         let totalMinutes = 0;
+        const breakdownMins: Record<string, number> = { trabajo: 0, breakfast: 0, lunch: 0, active_pause: 0 };
+
         const perUserAndDate = filteredForStats.reduce((acc: any, curr) => {
             const date = curr.date || curr.created_at?.split('T')[0];
             const key = `${curr.profile_id}_${date}`;
@@ -105,74 +174,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
         }, {});
 
         Object.values(perUserAndDate).forEach((dayEntries: any) => {
-            const sorted = [...dayEntries].sort((a, b) =>
-                new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-            );
-
-            for (let i = 0; i < sorted.length; i++) {
-                if (sorted[i].event_type === 'in') {
-                    const next = sorted[i + 1];
-                    if (next) {
-                        const start = new Date(sorted[i].created_at!);
-                        const end = new Date(next.created_at!);
-                        totalMinutes += (end.getTime() - start.getTime()) / (1000 * 60);
-                    } else if (sorted[i].created_at?.startsWith(today)) {
-                        // Still clocked in TODAY
-                        const start = new Date(sorted[i].created_at!);
-                        const end = new Date();
-                        totalMinutes += (end.getTime() - start.getTime()) / (1000 * 60);
-                    }
-                }
-            }
-        });
-
-        // Punctuality: First 'in' before 08:30 AM
-        const firstIns = entriesToday.filter(e => e.event_type === 'in' && !e.metadata?.is_return)
-            .reduce((acc: any, curr) => {
-                if (!curr.created_at) return acc;
-                if (!acc[curr.profile_id] || new Date(curr.created_at) < new Date(acc[curr.profile_id])) {
-                    acc[curr.profile_id] = curr.created_at;
-                }
-                return acc;
-            }, {});
-
-        const punctualCount = Object.values(firstIns).filter((time: any) => {
-            const date = new Date(time);
-            // Convertir a horas locales para validar puntualidad
-            const hours = date.getHours();
-            const minutes = date.getMinutes();
-            return hours < 8 || (hours === 8 && minutes <= 30);
-        }).length;
-
-        const punctualityRate = Object.keys(firstIns).length > 0
-            ? Math.round((punctualCount / Object.keys(firstIns).length) * 100)
-            : 100;
-
-        // Calculate breakdown minutes like totalMinutes
-        let breakdownMins: Record<string, number> = { trabajo: 0, breakfast: 0, lunch: 0, active_pause: 0, other: 0 };
-        Object.values(perUserAndDate).forEach((dayEntries: any) => {
             const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+            const profile = profiles.find(p => p.id === dayEntries[0].profile_id);
+            if (!profile) return;
+
+            const dateStr = dayEntries[0].date || dayEntries[0].created_at?.split('T')[0];
+            const dateObj = new Date(dateStr + 'T12:00:00'); // Mid-day to avoid TZ shifts
+            const dayCode = dayMap[dateObj.getDay()];
+            const profileSched = profile.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+
             for (let i = 0; i < sorted.length; i++) {
                 const start = new Date(sorted[i].created_at!);
                 const next = sorted[i + 1];
-                const isToday = (sorted[i].date || sorted[i].created_at?.split('T')[0]) === today;
+                const isToday = (sorted[i].date || sorted[i].created_at?.split('T')[0]) === todayStr;
                 const end = next ? new Date(next.created_at!) : (isToday ? new Date() : start);
-                const diff = (end.getTime() - start.getTime()) / 60000;
+                const diffMin = (end.getTime() - start.getTime()) / 60000;
 
-                if (sorted[i].event_type === 'in') breakdownMins.trabajo += diff;
-                else if (breakdownMins[sorted[i].event_type] !== undefined) breakdownMins[sorted[i].event_type] += diff;
+                if (sorted[i].event_type !== 'in') {
+                    if (breakdownMins[sorted[i].event_type] !== undefined) {
+                        breakdownMins[sorted[i].event_type] += diffMin;
+                    }
+                    continue;
+                }
+
+                breakdownMins.trabajo += diffMin;
+                totalMinutes += diffMin;
+
+                // --- Calculate Smart Cost ---
+                const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
+                const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
+
+                const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
+                const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
+
+                // Helper to get overlap in minutes between [start, end] and [t1, t2]
+                const getOverlap = (t1: Date, t2: Date) => {
+                    const overlapStart = new Date(Math.max(start.getTime(), t1.getTime()));
+                    const overlapEnd = new Date(Math.min(end.getTime(), t2.getTime()));
+                    return Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / 60000);
+                };
+
+                // Base / Ordinary (up to scheduled end)
+                const baseMin = getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
+                // Extra Diurna (from sched end to night start)
+                const extraDayMin = getOverlap(schedThreshold, nightThreshold);
+                // Extra Nocturna (from night start onwards)
+                const extraNightMin = getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
+
+                estimatedCost += (baseMin * (profile.hourly_rate_base || 0) / 60);
+                estimatedCost += (extraDayMin * (profile.hourly_rate_extra_day || profile.hourly_rate_base || 0) / 60);
+                estimatedCost += (extraNightMin * (profile.hourly_rate_night || profile.hourly_rate_base || 0) / 60);
             }
         });
 
         return {
             activeToday: activeNow.size,
             onBreakToday: onBreakNow.size,
+            latesToday,
+            estimatedCost: Math.round(estimatedCost),
             totalHoursPeriod: Math.floor(breakdownMins.trabajo / 60),
-            punctualityRate,
             totalMinutesPeriod: breakdownMins.trabajo,
-            breakdown: breakdownMins
+            breakdown: breakdownMins,
+            alerts: alertEntries.slice(0, 5) // Top 5 alerts
         };
-    }, [entries, dateRange, selectedProfileId]);
+    }, [entries, profiles, company, dateRange, selectedProfileId]);
 
     const chartData = useMemo(() => {
         const start = new Date(dateRange.start + 'T00:00:00');
@@ -373,24 +438,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
                     trend="up"
                 />
                 <StatCard
-                    title="Total Empleados"
-                    value={`${profiles.length}`}
-                    subValue="Colaboradores registrados"
-                    icon={<CheckCircle className="w-6 h-6 text-green-500" />}
+                    title="Llegadas Tarde"
+                    value={`${stats.latesToday}`}
+                    subValue="Alertas de hoy"
+                    icon={<Clock className="w-6 h-6 text-red-500" />}
+                    trend={stats.latesToday > 0 ? 'down' : 'up'}
+                />
+                <StatCard
+                    title="Coste Estimado"
+                    value={`$${stats.estimatedCost.toLocaleString()}`}
+                    subValue="Nómina bruta proyectada"
+                    icon={<TrendingUp className="w-6 h-6 text-green-500" />}
                     trend="up"
                 />
                 <StatCard
-                    title="En Pausa"
-                    value={`${stats.onBreakToday}`}
-                    subValue="Descansando ahora"
-                    icon={<Coffee className="w-6 h-6 text-orange-500" />}
-                    trend="down"
-                />
-                <StatCard
-                    title="Horas Totales"
+                    title="Horas del Periodo"
                     value={`${stats.totalHoursPeriod}h`}
                     subValue="Tiempo neto laborado"
-                    icon={<TrendingUp className="w-6 h-6 text-blue-500" />}
+                    icon={<FileDown className="w-6 h-6 text-blue-500" />}
                     trend="up"
                 />
             </div>
@@ -440,37 +505,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
                     </div>
                 </div>
 
-                <div className="bg-card border rounded-[2rem] p-8 shadow-sm flex flex-col justify-between">
-                    <div className="space-y-6">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-black uppercase tracking-tight">Resumen de Tiempos</h3>
-                            <div className="text-[10px] font-black bg-primary/10 text-primary px-3 py-1 rounded-full">CATEGORÍAS</div>
+                <div className="bg-card border rounded-[2rem] p-8 shadow-sm flex flex-col gap-6">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-black uppercase tracking-tight">Alertas Críticas</h3>
+                        <div className="text-[10px] font-black bg-red-100 text-red-700 px-3 py-1 rounded-full uppercase">Reporte de Hoy</div>
+                    </div>
+
+                    <div className="space-y-4 flex-1">
+                        {stats.alerts.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-30 grayscale">
+                                <CheckCircle className="w-12 h-12 mb-2" />
+                                <p className="text-[10px] font-black uppercase tracking-widest">Sin alertas pendientes</p>
+                            </div>
+                        ) : stats.alerts.map((alert: any, i: number) => (
+                            <div key={i} className={`p-4 rounded-2xl border-l-4 flex items-center justify-between transition-all hover:translate-x-1 ${alert.severity === 'error' ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-500'
+                                }`}>
+                                <div>
+                                    <p className="text-[11px] font-black uppercase leading-tight">{alert.name}</p>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5">{alert.type}</p>
+                                    <p className={`text-[10px] font-black mt-1 ${alert.severity === 'error' ? 'text-red-600' : 'text-amber-600'
+                                        }`}>{alert.desc}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] font-black text-muted-foreground">{alert.time}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="pt-4 border-t border-dashed">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase text-muted-foreground tracking-widest">
+                            <span>Distribución de Tiempos</span>
+                            <span className="text-primary italic">Periodo Actual</span>
                         </div>
-                        <div className="space-y-4">
-                            <DistributionItem
-                                label="Trabajo Efectivo"
-                                value={stats.totalMinutesPeriod > 0 ? 100 : 0}
-                                color="bg-primary"
-                                suffix={`${Math.floor(stats.totalMinutesPeriod / 60)}h`}
-                            />
-                            <DistributionItem
-                                label="Desayuno"
-                                value={Math.min(100, Math.round((stats.breakdown.breakfast / (stats.totalMinutesPeriod || 1)) * 100))}
-                                color="bg-orange-500"
-                                suffix={`${Math.round(stats.breakdown.breakfast)}m`}
-                            />
-                            <DistributionItem
-                                label="Almuerzo"
-                                value={Math.min(100, Math.round((stats.breakdown.lunch / (stats.totalMinutesPeriod || 1)) * 100))}
-                                color="bg-amber-500"
-                                suffix={`${Math.round(stats.breakdown.lunch)}m`}
-                            />
-                            <DistributionItem
-                                label="Pausa Activa"
-                                value={Math.min(100, Math.round((stats.breakdown.active_pause / (stats.totalMinutesPeriod || 1)) * 100))}
-                                color="bg-blue-500"
-                                suffix={`${Math.round(stats.breakdown.active_pause)}m`}
-                            />
+                        <div className="mt-4 space-y-3">
+                            <DistributionItem label="Trabajo" value={100} color="bg-primary" suffix={`${Math.floor(stats.totalMinutesPeriod / 60)}h`} />
+                            <DistributionItem label="Almuerzo/Ocio" value={Math.min(100, Math.round(((stats.breakdown.lunch + stats.breakdown.breakfast) / (stats.totalMinutesPeriod || 1)) * 100))} color="bg-amber-500" />
                         </div>
                     </div>
                 </div>

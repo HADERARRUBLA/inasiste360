@@ -82,6 +82,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     };
 
     const registerEntry = async (type: string, photoBase64?: string | null) => {
+        // Double check location just before saving
+        if (isInside === false) {
+            setStatus({ type: 'error', msg: 'Registro bloqueado: Estás fuera del área autorizada.' });
+            return;
+        }
+
         setStatus({ type: 'loading', msg: 'Registrando...' });
 
         const now = new Date();
@@ -167,8 +173,8 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
     return (
         <div className="max-w-md mx-auto relative animate-in zoom-in-95 duration-500">
-            {(isInside === false || geoError) && step === 'pin' && (
-                <div className="mb-6 p-6 bg-destructive text-destructive-foreground rounded-3xl flex flex-col items-center gap-4 font-bold shadow-xl border-2 border-white/20">
+            {(isInside === false || geoError) && (
+                <div className="mb-6 p-6 bg-destructive text-destructive-foreground rounded-3xl flex flex-col items-center gap-4 font-bold shadow-xl border-2 border-white/20 z-50 relative">
                     <div className="flex items-center gap-3">
                         <AlertCircle className="w-6 h-6 shrink-0" />
                         <span className="text-center">{geoError ? 'Error de GPS' : 'Fuera de área autorizada'}</span>
@@ -185,7 +191,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                 </div>
             )}
 
-            <div className={`bg-card border rounded-[2.5rem] p-10 shadow-2xl space-y-8 transition-all duration-500 ${isInside === false && step === 'pin' ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
+            <div className={`bg-card border rounded-[2.5rem] p-10 shadow-2xl space-y-8 transition-all duration-500 ${(isInside === false || geoError) ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
                 <div className="text-center space-y-4">
                     <div className="inline-flex mb-2 mx-auto hover:scale-105 transition-transform duration-500">
                         <img src="/logo_square.png" alt="Logo" className="w-48 h-auto object-contain drop-shadow-xl" />
