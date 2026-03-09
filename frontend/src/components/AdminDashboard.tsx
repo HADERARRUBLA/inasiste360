@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import type { TimeEntry } from '../types';
 import {
-    FileDown, Search, Filter, Users, Clock,
+    FileDown, Search, Users, Clock,
     CheckCircle, TrendingUp,
     MoreHorizontal, ArrowUpRight, ArrowDownRight, Trash2
 } from 'lucide-react';
@@ -13,13 +13,14 @@ import {
 
 interface AdminDashboardProps {
     companyId: string | null;
+    view?: 'analytics' | 'reports';
 }
 
 const dayMap: Record<number, string> = {
     0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat'
 };
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view = 'analytics' }) => {
     const [entries, setEntries] = useState<TimeEntry[]>([]);
     const [profiles, setProfiles] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -29,6 +30,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
         end: new Date().toLocaleDateString('en-CA')
     });
     const [selectedProfileId, setSelectedProfileId] = useState<string>('all');
+    const [viewTab, setViewTab] = useState<'analytics' | 'reports'>(view);
+    const [reportType, setReportType] = useState<'employees' | 'hours' | 'alerts'>('employees');
+
+    // Sync viewTab if prop changes
+    useEffect(() => {
+        setViewTab(view);
+    }, [view]);
 
     const [company, setCompany] = useState<any>(null);
 
@@ -162,7 +170,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
 
         // 4. Payroll Calculation (Estimated)
         let estimatedCost = 0;
-        let totalMinutes = 0;
+        let totalMinutesWork = 0;
         const breakdownMins: Record<string, number> = { trabajo: 0, breakfast: 0, lunch: 0, active_pause: 0 };
 
         const perUserAndDate = filteredForStats.reduce((acc: any, curr) => {
@@ -198,44 +206,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
                 }
 
                 breakdownMins.trabajo += diffMin;
-                totalMinutes += diffMin;
+                totalMinutesWork += diffMin;
 
                 // --- Calculate Smart Cost ---
+                const isSunday = dateObj.getDay() === 0;
                 const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
                 const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
 
                 const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
                 const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
 
-                // Helper to get overlap in minutes between [start, end] and [t1, t2]
                 const getOverlap = (t1: Date, t2: Date) => {
                     const overlapStart = new Date(Math.max(start.getTime(), t1.getTime()));
                     const overlapEnd = new Date(Math.min(end.getTime(), t2.getTime()));
                     return Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / 60000);
                 };
 
-                // Base / Ordinary (up to scheduled end)
                 const baseMin = getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
-                // Extra Diurna (from sched end to night start)
                 const extraDayMin = getOverlap(schedThreshold, nightThreshold);
-                // Extra Nocturna (from night start onwards)
                 const extraNightMin = getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
 
-                estimatedCost += (baseMin * (profile.hourly_rate_base || 0) / 60);
-                estimatedCost += (extraDayMin * (profile.hourly_rate_extra_day || profile.hourly_rate_base || 0) / 60);
-                estimatedCost += (extraNightMin * (profile.hourly_rate_night || profile.hourly_rate_base || 0) / 60);
+                const baseRate = isSunday ? (profile.hourly_rate_sunday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
+
+                estimatedCost += (baseMin * baseRate / 60);
+                estimatedCost += (extraDayMin * (profile.hourly_rate_extra_day || baseRate || 0) / 60);
+                estimatedCost += (extraNightMin * (profile.hourly_rate_night || baseRate || 0) / 60);
             }
         });
 
         return {
+            totalEmployees: profiles.length,
             activeToday: activeNow.size,
             onBreakToday: onBreakNow.size,
             latesToday,
             estimatedCost: Math.round(estimatedCost),
-            totalHoursPeriod: Math.floor(breakdownMins.trabajo / 60),
-            totalMinutesPeriod: breakdownMins.trabajo,
+            totalHoursPeriod: Math.floor(totalMinutesWork / 60),
+            totalMinutesPeriod: totalMinutesWork,
             breakdown: breakdownMins,
-            alerts: alertEntries.slice(0, 5) // Top 5 alerts
+            alerts: alertEntries // All alerts for reporting
         };
     }, [entries, profiles, company, dateRange, selectedProfileId]);
 
@@ -282,55 +290,95 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
             e.metadata?.method || 'N/A'
         ]);
 
-        // 2. Summary Session (Total hours per employee)
-        const summaryHeaders = ['', 'RESUMEN DE TIEMPO EFECTIVO', '', '', '', ''];
-        const summarySubHeaders = ['Colaborador', 'ID', 'Total Horas', 'Total Minutos', '', ''];
-
         const totalsByEmployee = filteredEntries.reduce((acc: any, curr) => {
             if (!curr.profile_id) return acc;
-            const date = curr.created_at?.split('T')[0];
+            const date = curr.date || curr.created_at?.split('T')[0];
             if (!date) return acc;
 
-            if (!acc[curr.profile_id]) acc[curr.profile_id] = { name: curr.profiles?.full_name, id: curr.profiles?.national_id, days: {} };
+            const profile = profiles.find(p => p.id === curr.profile_id);
+            if (!acc[curr.profile_id]) {
+                acc[curr.profile_id] = {
+                    name: profile?.full_name || 'N/A',
+                    id: profile?.national_id || 'N/A',
+                    rates: `Base: ${profile?.hourly_rate_base} | ExtraD: ${profile?.hourly_rate_extra_day} | Noct: ${profile?.hourly_rate_night} | Dom: ${profile?.hourly_rate_sunday}`,
+                    days: {}
+                };
+            }
             if (!acc[curr.profile_id].days[date]) acc[curr.profile_id].days[date] = [];
             acc[curr.profile_id].days[date].push(curr);
             return acc;
         }, {});
 
-        const summaryRows = Object.values(totalsByEmployee).map((emp: any) => {
-            let empMinutes = 0;
-            Object.values(emp.days).forEach((dayEntries: any) => {
+        const summaryRows: any[] = [];
+        Object.values(totalsByEmployee).forEach((emp: any) => {
+            let totalOrd = 0, totalExtD = 0, totalExtN = 0, totalMin = 0;
+
+            Object.keys(emp.days).forEach(dateStr => {
+                const dayEntries = emp.days[dateStr];
                 const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-                for (let i = 0; i < sorted.length; i++) {
-                    if (sorted[i].event_type === 'in') {
-                        const next = sorted[i + 1];
-                        if (next) empMinutes += (new Date(next.created_at!).getTime() - new Date(sorted[i].created_at!).getTime()) / 60000;
-                        else if (sorted[i].created_at?.startsWith(new Date().toLocaleDateString('en-CA'))) {
-                            empMinutes += (new Date().getTime() - new Date(sorted[i].created_at!).getTime()) / 60000;
-                        }
-                    }
-                }
+                const profile = profiles.find(p => p.national_id === emp.id);
+                const dateObj = new Date(dateStr + 'T12:00:00');
+                const dayCode = dayMap[dateObj.getDay()];
+                const profileSched = profile?.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+
+                sorted.forEach((e: any, idx: number) => {
+                    if (e.event_type !== 'in') return;
+                    const start = new Date(e.created_at!);
+                    const next = sorted[idx + 1];
+                    const end = next ? new Date(next.created_at!) : (dateStr === new Date().toLocaleDateString('en-CA') ? new Date() : start);
+                    const diff = (end.getTime() - start.getTime()) / 60000;
+                    totalMin += diff;
+
+                    const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
+                    const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
+                    const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
+                    const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
+
+                    const getOverlap = (t1: Date, t2: Date) => {
+                        const os = new Date(Math.max(start.getTime(), t1.getTime()));
+                        const oe = new Date(Math.min(end.getTime(), t2.getTime()));
+                        return Math.max(0, (oe.getTime() - os.getTime()) / 60000);
+                    };
+
+                    totalOrd += getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
+                    totalExtD += getOverlap(schedThreshold, nightThreshold);
+                    totalExtN += getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
+                });
             });
-            return [emp.name, emp.id, Math.floor(empMinutes / 60) + 'h ' + Math.round(empMinutes % 60) + 'm', Math.round(empMinutes), '', ''];
+
+            summaryRows.push([
+                emp.name, emp.id,
+                Math.round(totalOrd), Math.round(totalExtD), Math.round(totalExtN),
+                Math.round(totalMin), emp.rates
+            ]);
         });
+
+        // 3. Alerts Session
+        const alertHeaders = ['Colaborador', 'Tipo Alerta', 'Fecha/Hora', 'Descripcion'];
+        const alertRows = stats.alerts.map((a: any) => [a.name, a.type, a.time, a.desc]);
 
         const csvContent = [
             ['REPORTES ASISTE360'],
             [`Periodo: ${dateRange.start} al ${dateRange.end}`],
             [],
+            ['--- 1. REGISTROS DETALLADOS ---'],
             logHeaders,
             ...logRows,
             [],
-            summaryHeaders,
-            summarySubHeaders,
-            ...summaryRows
-        ].map(r => r.join(',')).join('\n');
+            ['--- 2. RESUMEN DE NOMINA Y HORAS ---'],
+            ['Colaborador', 'ID', 'Min. Ordinarios', 'Min. Extra Dia', 'Min. Extra Noche', 'Total Minutos', 'Condiciones'],
+            ...summaryRows,
+            [],
+            ['--- 3. NOVEDADES Y ALERTAS ---'],
+            alertHeaders,
+            ...alertRows
+        ].map(r => r.map((cell: any) => `"${cell}"`).join(',')).join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `asiste360_nomina_${dateRange.start}_a_${dateRange.end}.csv`);
+        link.setAttribute('download', `asiste360_reporte_hr_${dateRange.start}_a_${dateRange.end}.csv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -397,10 +445,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
             {/* Header section */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
-                    <h2 className="text-3xl font-black text-primary tracking-tighter uppercase italic">Panel de Control Analítico</h2>
+                    <h2 className="text-3xl font-black text-primary tracking-tighter uppercase italic">Panel de Control Analítico v2.0</h2>
                     <p className="text-muted-foreground text-sm font-medium">Bienvenido de nuevo. Aquí tienes el resumen de hoy.</p>
                 </div>
-                <div className="flex flex-col md:flex-row items-center gap-3">
+                <div className="flex flex-col md:flex-row items-center gap-4">
+                    <div className="flex bg-muted/30 p-1 rounded-xl border">
+                        <button
+                            onClick={() => setViewTab('analytics')}
+                            className={`px-6 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${viewTab === 'analytics' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-white/50'}`}
+                        >
+                            Métricas
+                        </button>
+                        <button
+                            onClick={() => setViewTab('reports')}
+                            className={`px-6 py-2 text-xs font-black uppercase tracking-widest rounded-lg transition-all ${viewTab === 'reports' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-white/50'}`}
+                        >
+                            Reportes
+                        </button>
+                    </div>
+
                     <div className="flex bg-card border rounded-xl p-1 shadow-sm">
                         <select
                             value={selectedProfileId}
@@ -428,219 +491,271 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId }) => 
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard
-                    title="En Turno Ahora"
-                    value={`${stats.activeToday}`}
-                    subValue="Laborando en este momento"
-                    icon={<Users className="w-6 h-6 text-primary" />}
-                    trend="up"
-                />
-                <StatCard
-                    title="Llegadas Tarde"
-                    value={`${stats.latesToday}`}
-                    subValue="Alertas de hoy"
-                    icon={<Clock className="w-6 h-6 text-red-500" />}
-                    trend={stats.latesToday > 0 ? 'down' : 'up'}
-                />
-                <StatCard
-                    title="Coste Estimado"
-                    value={`$${stats.estimatedCost.toLocaleString()}`}
-                    subValue="Nómina bruta proyectada"
-                    icon={<TrendingUp className="w-6 h-6 text-green-500" />}
-                    trend="up"
-                />
-                <StatCard
-                    title="Horas del Periodo"
-                    value={`${stats.totalHoursPeriod}h`}
-                    subValue="Tiempo neto laborado"
-                    icon={<FileDown className="w-6 h-6 text-blue-500" />}
-                    trend="up"
-                />
-            </div>
-
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 bg-card border rounded-[2rem] p-8 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-black uppercase tracking-tight">Actividad Semanal</h3>
-                        <MoreHorizontal className="text-muted-foreground w-5 h-5 cursor-pointer" />
-                    </div>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData}>
-                                <defs>
-                                    <linearGradient id="colorIn" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8884d8" stopOpacity={0.1} />
-                                        <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                <XAxis
-                                    dataKey="name"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fontSize: 10, fill: '#64748B' }}
-                                    dy={10}
-                                />
-                                <YAxis
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fontSize: 10, fill: '#64748B' }}
-                                />
-                                <Tooltip
-                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="actividad"
-                                    stroke="#8884d8"
-                                    strokeWidth={3}
-                                    fillOpacity={1}
-                                    fill="url(#colorIn)"
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                <div className="bg-card border rounded-[2rem] p-8 shadow-sm flex flex-col gap-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-black uppercase tracking-tight">Alertas Críticas</h3>
-                        <div className="text-[10px] font-black bg-red-100 text-red-700 px-3 py-1 rounded-full uppercase">Reporte de Hoy</div>
+            {viewTab === 'analytics' ? (
+                <>
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <StatCard
+                            title="Total Empleados"
+                            value={`${profiles.length}`}
+                            subValue="En esta sede"
+                            icon={<Users className="w-6 h-6 text-primary" />}
+                            trend="up"
+                        />
+                        <StatCard
+                            title="En Turno"
+                            value={`${stats.activeToday}`}
+                            subValue="Laborando ahora"
+                            icon={<Clock className="w-6 h-6 text-green-500" />}
+                            trend="up"
+                        />
+                        <StatCard
+                            title="Coste Estimado"
+                            value={`$${stats.estimatedCost.toLocaleString()}`}
+                            subValue="Nómina proyectada"
+                            icon={<TrendingUp className="w-6 h-6 text-green-500" />}
+                            trend="up"
+                        />
+                        <StatCard
+                            title="Horas Periodo"
+                            value={`${stats.totalHoursPeriod}h`}
+                            subValue="Total trabajadas"
+                            icon={<FileDown className="w-6 h-6 text-blue-500" />}
+                            trend="up"
+                        />
                     </div>
 
-                    <div className="space-y-4 flex-1">
-                        {stats.alerts.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-30 grayscale">
-                                <CheckCircle className="w-12 h-12 mb-2" />
-                                <p className="text-[10px] font-black uppercase tracking-widest">Sin alertas pendientes</p>
+                    {/* Charts & Alerts Section */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 bg-card border rounded-[2rem] p-8 shadow-sm space-y-6">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-black uppercase tracking-tight">Actividad en el Periodo</h3>
+                                <MoreHorizontal className="text-muted-foreground w-5 h-5 cursor-pointer" />
                             </div>
-                        ) : stats.alerts.map((alert: any, i: number) => (
-                            <div key={i} className={`p-4 rounded-2xl border-l-4 flex items-center justify-between transition-all hover:translate-x-1 ${alert.severity === 'error' ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-500'
-                                }`}>
-                                <div>
-                                    <p className="text-[11px] font-black uppercase leading-tight">{alert.name}</p>
-                                    <p className="text-[9px] font-bold text-muted-foreground uppercase mt-0.5">{alert.type}</p>
-                                    <p className={`text-[10px] font-black mt-1 ${alert.severity === 'error' ? 'text-red-600' : 'text-amber-600'
-                                        }`}>{alert.desc}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] font-black text-muted-foreground">{alert.time}</p>
-                                </div>
+                            <div className="h-[300px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData}>
+                                        <defs>
+                                            <linearGradient id="colorIn" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#8884d8" stopOpacity={0.1} />
+                                                <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} />
+                                        <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Area type="monotone" dataKey="actividad" stroke="#8884d8" strokeWidth={3} fillOpacity={1} fill="url(#colorIn)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
                             </div>
-                        ))}
-                    </div>
-
-                    <div className="pt-4 border-t border-dashed">
-                        <div className="flex items-center justify-between text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-                            <span>Distribución de Tiempos</span>
-                            <span className="text-primary italic">Periodo Actual</span>
                         </div>
-                        <div className="mt-4 space-y-3">
-                            <DistributionItem label="Trabajo" value={100} color="bg-primary" suffix={`${Math.floor(stats.totalMinutesPeriod / 60)}h`} />
-                            <DistributionItem label="Almuerzo/Ocio" value={Math.min(100, Math.round(((stats.breakdown.lunch + stats.breakdown.breakfast) / (stats.totalMinutesPeriod || 1)) * 100))} color="bg-amber-500" />
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Table Section */}
-            <div className="bg-card border rounded-[2rem] shadow-sm overflow-hidden">
-                <div className="p-8 border-b space-y-6">
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <h3 className="text-xl font-black uppercase italic tracking-tighter">Registros Recientes</h3>
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <div className="relative flex-1 sm:w-64">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                <input
-                                    type="text"
-                                    placeholder="Buscar por colaborador..."
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 bg-muted/20 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                                />
+                        <div className="bg-card border rounded-[2rem] p-8 shadow-sm flex flex-col gap-6">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-black uppercase tracking-tight">Alertas Recientes</h3>
+                                <div className="text-[10px] font-black bg-red-100 text-red-700 px-3 py-1 rounded-full uppercase">Hoy</div>
                             </div>
-                            <button className="p-2.5 bg-muted/30 rounded-xl hover:bg-muted/50 transition-all">
-                                <Filter className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={handleClearRecords}
-                                className="flex items-center gap-2 px-6 py-2 bg-red-50 text-red-600 border border-red-100 rounded-xl text-xs font-black shadow-sm hover:bg-red-100 transition-all active:scale-95"
-                                title="Limpiar registros del periodo seleccionado"
-                            >
-                                <Trash2 className="w-4 h-4" /> LIMPIAR
-                            </button>
-                            <button
-                                onClick={exportToCSV}
-                                className="flex items-center gap-2 px-6 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-black shadow-sm hover:opacity-90 transition-all active:scale-95"
-                            >
-                                <FileDown className="w-4 h-4" /> EXPORTAR
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
-                            <tr>
-                                <th className="px-8 py-5">Colaborador</th>
-                                <th className="px-8 py-5">Tipo de Registro</th>
-                                <th className="px-8 py-5">Fecha y Hora</th>
-                                <th className="px-8 py-5">Ubicación</th>
-                                <th className="px-8 py-5 text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y text-sm">
-                            {loading ? (
-                                <tr><td colSpan={5} className="px-8 py-16 text-center text-muted-foreground animate-pulse text-xs font-black uppercase tracking-widest">Sincronizando con el servidor...</td></tr>
-                            ) : filteredEntries.length === 0 ? (
-                                <tr><td colSpan={5} className="px-8 py-16 text-center text-muted-foreground text-xs font-bold italic">No se encontraron registros para mostrar.</td></tr>
-                            ) : filteredEntries.map((entry: any) => (
-                                <tr key={entry.id} className="hover:bg-muted/30 transition-all group">
-                                    <td className="px-8 py-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center font-black text-xs text-primary">
-                                                {entry.profiles?.full_name?.substring(0, 2).toUpperCase()}
-                                            </div>
-                                            <div>
-                                                <p className="font-black text-sm">{entry.profiles?.full_name || 'Desconocido'}</p>
-                                                <p className="text-[10px] text-muted-foreground font-medium uppercase">{entry.profiles?.national_id || 'ID-OFFLINE'}</p>
-                                            </div>
+                            <div className="space-y-4 flex-1">
+                                {stats.alerts.filter(a => a.time !== '--:--' || a.type.includes('Llegada')).length === 0 ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-30 grayscale">
+                                        <CheckCircle className="w-12 h-12 mb-2" />
+                                        <p className="text-[10px] font-black uppercase tracking-widest">Sin alertas</p>
+                                    </div>
+                                ) : stats.alerts.slice(0, 5).map((alert: any, i: number) => (
+                                    <div key={i} className={`p-4 rounded-2xl border-l-4 flex items-center justify-between transition-all hover:translate-x-1 ${alert.severity === 'error' ? 'bg-red-50 border-red-500' : 'bg-amber-50 border-amber-500'}`}>
+                                        <div>
+                                            <p className="text-[11px] font-black uppercase leading-tight">{alert.name}</p>
+                                            <p className={`text-[10px] font-black mt-1 ${alert.severity === 'error' ? 'text-red-600' : 'text-amber-600'}`}>{alert.desc}</p>
                                         </div>
-                                    </td>
-                                    <td className="px-8 py-5">
-                                        {getEventBadge(entry.event_type, entry.metadata)}
-                                    </td>
-                                    <td className="px-8 py-5">
-                                        <div className="flex items-center gap-2 text-muted-foreground font-medium">
-                                            <Clock className="w-3.5 h-3.5" />
-                                            <span className="text-xs">
-                                                {entry.created_at ? new Date(entry.created_at).toLocaleString('es-CO', {
-                                                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
-                                                }) : '---'}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="px-8 py-5 text-xs font-bold text-muted-foreground italic">
-                                        Sede Norte (GPS OK)
-                                    </td>
-                                    <td className="px-8 py-5 text-right">
-                                        <button className="p-2 hover:bg-muted rounded-lg opacity-0 group-hover:opacity-100 transition-all">
-                                            <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                        <div className="text-right"><p className="text-[10px] font-black text-muted-foreground">{alert.time}</p></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Table Section */}
+                    <div className="bg-card border rounded-[2rem] shadow-sm overflow-hidden">
+                        <div className="p-8 border-b flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <h3 className="text-xl font-black uppercase italic tracking-tighter">Registros de Tiempo</h3>
+                            <div className="flex items-center gap-2">
+                                <SearchInput value={searchTerm} onChange={setSearchTerm} />
+                                <button onClick={handleClearRecords} className="flex items-center gap-2 px-6 py-2 bg-red-50 text-red-600 border border-red-100 rounded-xl text-xs font-black shadow-sm hover:bg-red-100 transition-all active:scale-95">
+                                    <Trash2 className="w-4 h-4" /> LIMPIAR
+                                </button>
+                                <button onClick={exportToCSV} className="flex items-center gap-2 px-6 py-2 bg-primary text-primary-foreground rounded-xl text-xs font-black shadow-sm hover:opacity-90 transition-all active:scale-95">
+                                    <FileDown className="w-4 h-4" /> EXPORTAR
+                                </button>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                                    <tr>
+                                        <th className="px-8 py-5">Colaborador</th>
+                                        <th className="px-8 py-5">Tipo</th>
+                                        <th className="px-8 py-5">Fecha y Hora</th>
+                                        <th className="px-8 py-5">Detalles</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y text-sm">
+                                    {loading ? (
+                                        <tr><td colSpan={5} className="px-8 py-16 text-center text-muted-foreground animate-pulse text-xs font-black uppercase tracking-widest">Cargando...</td></tr>
+                                    ) : filteredEntries.slice(0, 50).map((entry: any) => (
+                                        <tr key={entry.id} className="hover:bg-muted/30 transition-all group">
+                                            <td className="px-8 py-5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-black text-[10px] text-primary">
+                                                        {entry.profiles?.full_name?.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-black text-xs">{entry.profiles?.full_name}</p>
+                                                        <p className="text-[9px] text-muted-foreground font-black uppercase">{entry.profiles?.national_id}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-5">{getEventBadge(entry.event_type, entry.metadata)}</td>
+                                            <td className="px-8 py-5 text-xs font-medium text-muted-foreground">
+                                                {new Date(entry.created_at!).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="px-8 py-5 text-[10px] font-bold text-muted-foreground italic">
+                                                {entry.metadata?.method || 'pin-mode'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex items-center gap-4 border-b pb-6">
+                        <button onClick={() => setReportType('employees')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'employees' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>1. Condiciones</button>
+                        <button onClick={() => setReportType('hours')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'hours' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>2. Horas Detalladas</button>
+                        <button onClick={() => setReportType('alerts')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'alerts' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>3. Novedades</button>
+                        <div className="ml-auto">
+                            <button onClick={exportToCSV} className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-green-700 transition-all active:scale-95">
+                                <FileDown className="w-4 h-4" /> DESCARGAR EXCEL COMPLETO
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-card border rounded-[2rem] shadow-sm overflow-hidden">
+                        {reportType === 'employees' ? (
+                            <table className="w-full text-left">
+                                <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                                    <tr>
+                                        <th className="px-8 py-5">Empleado</th>
+                                        <th className="px-8 py-5">Tasa Base</th>
+                                        <th className="px-8 py-5">Extra Dia</th>
+                                        <th className="px-8 py-5">Nocturna</th>
+                                        <th className="px-8 py-5">Dominical</th>
+                                        <th className="px-8 py-5">Horario</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y text-xs font-bold">
+                                    {profiles.map(p => (
+                                        <tr key={p.id} className="hover:bg-muted/30 transition-all">
+                                            <td className="px-8 py-5">
+                                                <p className="font-black text-sm">{p.full_name}</p>
+                                                <p className="text-[9px] text-muted-foreground uppercase">{p.national_id}</p>
+                                            </td>
+                                            <td className="px-8 py-5 text-primary">${p.hourly_rate_base?.toLocaleString()}</td>
+                                            <td className="px-8 py-5">${p.hourly_rate_extra_day?.toLocaleString()}</td>
+                                            <td className="px-8 py-5">${p.hourly_rate_night?.toLocaleString()}</td>
+                                            <td className="px-8 py-5 text-orange-600">${p.hourly_rate_sunday?.toLocaleString()}</td>
+                                            <td className="px-8 py-5 text-[9px] text-muted-foreground">{p.use_custom_schedule ? 'PERSONALIZADO' : 'GLOBAL SEDE'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : reportType === 'hours' ? (
+                            <table className="w-full text-left">
+                                <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                                    <tr>
+                                        <th className="px-8 py-5">Colaborador</th>
+                                        <th className="px-8 py-5 text-center">Min. Ord</th>
+                                        <th className="px-8 py-5 text-center">Min. ExtD</th>
+                                        <th className="px-8 py-5 text-center">Min. ExtN</th>
+                                        <th className="px-8 py-5 text-center">Total Horas</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y text-xs font-bold">
+                                    {profiles.map(p => {
+                                        const empEntries = entries.filter(e => e.profile_id === p.id && e.created_at && (e.date || e.created_at.split('T')[0]) >= dateRange.start && (e.date || e.created_at.split('T')[0]) <= dateRange.end);
+                                        let mTotal = 0;
+
+                                        const sorted = [...empEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+                                        sorted.forEach((e, idx) => {
+                                            if (e.event_type !== 'in' || !e.created_at) return;
+                                            const next = sorted[idx + 1];
+                                            const start = new Date(e.created_at);
+                                            const end = next?.created_at ? new Date(next.created_at) : (e.created_at?.startsWith(new Date().toLocaleDateString('en-CA')) ? new Date() : start);
+                                            mTotal += (end.getTime() - start.getTime()) / 60000;
+                                        });
+
+                                        return (
+                                            <tr key={p.id} className="hover:bg-muted/30 transition-all">
+                                                <td className="px-8 py-5">
+                                                    <p className="font-black text-sm">{p.full_name}</p>
+                                                    <p className="text-[9px] text-muted-foreground uppercase">{p.national_id}</p>
+                                                </td>
+                                                <td className="px-8 py-5 text-center text-slate-500 italic">Ver en Excel</td>
+                                                <td className="px-8 py-5 text-center text-slate-500 italic">Ver en Excel</td>
+                                                <td className="px-8 py-5 text-center text-slate-500 italic">Ver en Excel</td>
+                                                <td className="px-8 py-5 text-center text-primary text-sm font-black">{Math.floor(mTotal / 60)}h {Math.round(mTotal % 60)}m</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <table className="w-full text-left">
+                                <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                                    <tr>
+                                        <th className="px-8 py-5">Colaborador</th>
+                                        <th className="px-8 py-5">Tipo Novedad</th>
+                                        <th className="px-8 py-5">Hora</th>
+                                        <th className="px-8 py-5">Detalle</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y text-xs font-bold">
+                                    {stats.alerts.map((a: any, i: number) => (
+                                        <tr key={i} className="hover:bg-muted/30 transition-all">
+                                            <td className="px-8 py-5">{a.name}</td>
+                                            <td className="px-8 py-5">
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] ${a.severity === 'error' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{a.type}</span>
+                                            </td>
+                                            <td className="px-8 py-5">{a.time}</td>
+                                            <td className="px-8 py-5 text-muted-foreground font-black italic">{a.desc}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
+
+// UI Components
+const SearchInput = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => (
+    <div className="relative w-full sm:w-64">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+            type="text"
+            placeholder="Buscar colaborador..."
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-muted/20 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+        />
+    </div>
+);
 
 // UI Components
 const StatCard: React.FC<{ title: string, value: string, subValue: string, icon: React.ReactNode, trend: 'up' | 'down' }> = ({
@@ -665,14 +780,3 @@ const StatCard: React.FC<{ title: string, value: string, subValue: string, icon:
     </div>
 );
 
-const DistributionItem: React.FC<{ label: string, value: number, color: string, suffix?: string }> = ({ label, value, color, suffix }) => (
-    <div className="space-y-2">
-        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tight">
-            <span>{label}</span>
-            <span className="text-muted-foreground">{suffix || `${value}%`}</span>
-        </div>
-        <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
-            <div className={`h-full ${color} rounded-full`} style={{ width: `${value}%` }} />
-        </div>
-    </div>
-);

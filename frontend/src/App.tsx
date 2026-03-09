@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
-import { LayoutDashboard, Clock, Users, Building2, LogOut, ShieldAlert, MapPin, ShieldCheck, LogIn } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings } from 'lucide-react';
 import { KioskMode } from './components/KioskMode';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EmployeeManagement } from './components/EmployeeManagement';
@@ -13,7 +13,7 @@ function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports'>('dashboard');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [loginData, setLoginData] = useState({ id: '', pin: '' });
@@ -264,10 +264,16 @@ function App() {
               <ShieldCheck className="w-4 h-4" /> Auditoría
             </button>
             <button
+              onClick={() => setActiveTab('reports')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'reports' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+            >
+              <FileDown className="w-4 h-4" /> Reportes
+            </button>
+            <button
               onClick={() => setActiveTab('config')}
               className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'config' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
             >
-              <Building2 className="w-4 h-4" /> Configuración
+              <Settings className="w-4 h-4" /> Configuración
             </button>
 
             {userProfile?.role === 'superadmin' && (
@@ -301,26 +307,9 @@ function App() {
         <main className="flex-1 p-8 overflow-y-auto">
           <section className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             {activeTab === 'dashboard' ? (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                  <div className="p-8 bg-card border rounded-[2.5rem] shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><Users className="w-12 h-12" /></div>
-                    <h3 className="text-xs font-black text-muted-foreground uppercase tracking-widest">Total Empleados</h3>
-                    <p className="text-4xl font-black mt-3">124</p>
-                  </div>
-                  <div className="p-8 bg-card border rounded-[2.5rem] shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><Clock className="w-12 h-12" /></div>
-                    <h3 className="text-xs font-black text-muted-foreground uppercase tracking-widest">En Turno Ahora</h3>
-                    <p className="text-4xl font-black mt-3 text-green-500">89</p>
-                  </div>
-                  <div className="p-8 bg-card border rounded-[2.5rem] shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><ShieldAlert className="w-12 h-12 text-red-500" /></div>
-                    <h3 className="text-xs font-black text-muted-foreground uppercase tracking-widest">Alertas</h3>
-                    <p className="text-4xl font-black mt-3 text-red-500">2</p>
-                  </div>
-                </div>
-                <AdminDashboard companyId={selectedCompanyId} />
-              </>
+              <AdminDashboard companyId={selectedCompanyId} view="analytics" />
+            ) : activeTab === 'reports' ? (
+              <AdminDashboard companyId={selectedCompanyId} view="reports" />
             ) : activeTab === 'employees' ? (
               <EmployeeManagement companyId={selectedCompanyId} />
             ) : activeTab === 'audit' ? (
