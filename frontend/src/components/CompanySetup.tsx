@@ -51,7 +51,9 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                     name: company.name,
                     address: company.address,
                     lat_long: company.lat_long,
-                    radius_limit: company.radius_limit
+                    radius_limit: company.radius_limit,
+                    night_shift_start_time: company.night_shift_start_time,
+                    extra_day_start_time: company.extra_day_start_time
                 })
                 .eq('id', company.id);
 
@@ -145,6 +147,34 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                             className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
                             placeholder="Ej: Calle 10 # 43 - 50, Medellín"
                         />
+                    </div>
+                </div>
+
+                {/* Global Schedule Config */}
+                <div className="bg-primary/5 border border-primary/10 rounded-[2.5rem] p-10 shadow-xl space-y-6 md:col-span-1">
+                    <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                        <Save className="w-4 h-4" /> Horario Global de Sede
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Inició Hora Extra Diurna</label>
+                            <input
+                                type="time"
+                                value={company.extra_day_start_time || '06:00'}
+                                onChange={e => setCompany({ ...company, extra_day_start_time: e.target.value })}
+                                className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-black text-lg"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Inicio Recargo Nocturno</label>
+                            <input
+                                type="time"
+                                value={company.night_shift_start_time || '21:00'}
+                                onChange={e => setCompany({ ...company, night_shift_start_time: e.target.value })}
+                                className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-black text-lg"
+                            />
+                        </div>
                     </div>
                 </div>
 
