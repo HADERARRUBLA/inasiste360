@@ -93,7 +93,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         setLoading(true);
         try {
             const { data } = await supabase
-                .from('profiles')
+                .from('InA_profiles')
                 .select('*')
                 .eq('company_id', targetId as string)
                 .order('full_name');
@@ -168,12 +168,12 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
         if (editingId) {
             const { error: err } = await supabase
-                .from('profiles')
+                .from('InA_profiles')
                 .update(submitData)
                 .eq('id', editingId);
             error = err;
         } else {
-            const { error: err } = await supabase.from('profiles').insert([submitData]);
+            const { error: err } = await supabase.from('InA_profiles').insert([submitData]);
             error = err;
         }
 
@@ -208,7 +208,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
     const handleDelete = async (id: string) => {
         if (confirm('¿Estás seguro de eliminar este empleado?')) {
-            const { error } = await supabase.from('profiles').delete().eq('id', id);
+            const { error } = await supabase.from('InA_profiles').delete().eq('id', id);
             if (!error) fetchProfiles();
         }
     };

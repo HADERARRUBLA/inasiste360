@@ -56,7 +56,7 @@ export interface TimeEntry {
     metadata: any;
     created_at?: string;
     date?: string; // Derived field if needed
-    profiles?: Profile;
+    InA_profiles?: Profile;
 }
 
-export type TimeEntryWithProfile = TimeEntry & { profiles: Profile };
+export type TimeEntryWithProfile = TimeEntry & { InA_profiles: Profile };

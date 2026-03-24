@@ -48,7 +48,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
                 // Fetch Company Settings
                 const { data: compData } = await supabase
-                    .from('companies')
+                    .from('InA_companies')
                     .select('*')
                     .eq('id', companyId)
                     .single();
@@ -56,8 +56,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
                 // Fetch Time Entries
                 const { data: entryData, error: entryError } = await supabase
-                    .from('time_entries')
-                    .select('*, profiles(*)')
+                    .from('InA_time_entries')
+                    .select('*, InA_profiles(*)')
                     .eq('company_id', companyId)
                     .order('created_at', { ascending: false });
 
@@ -66,7 +66,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
                 // Fetch Full Profiles
                 const { data: profileData, error: profileError } = await supabase
-                    .from('profiles')
+                    .from('InA_profiles')
                     .select('*')
                     .eq('company_id', companyId)
                     .order('full_name');
@@ -271,7 +271,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
     }, [entries, dateRange, selectedProfileId]);
 
     const filteredEntries = entries.filter(e => {
-        const matchesSearch = e.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = e.InA_profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase());
         const date = e.date || e.created_at?.split('T')[0];
         const matchesDate = date && date >= dateRange.start && date <= dateRange.end;
         const matchesProfile = selectedProfileId === 'all' || e.profile_id === selectedProfileId;
@@ -283,8 +283,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo'];
         const logRows = filteredEntries.map(e => [
             e.date || e.created_at?.split('T')[0],
-            e.profiles?.full_name || 'N/A',
-            e.profiles?.national_id || 'N/A',
+            e.InA_profiles?.full_name || 'N/A',
+            e.InA_profiles?.national_id || 'N/A',
             e.metadata?.event_label || e.event_type,
             e.created_at ? new Date(e.created_at).toLocaleTimeString() : 'N/A',
             e.metadata?.method || 'N/A'
@@ -396,7 +396,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         try {
             setLoading(true);
             const { error: deleteError } = await supabase
-                .from('time_entries')
+                .from('InA_time_entries')
                 .delete()
                 .eq('company_id', companyId)
                 .gte('date', dateRange.start)
@@ -408,8 +408,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
             // Refresh data
             const { data: entryData } = await supabase
-                .from('time_entries')
-                .select('*, profiles(*)')
+                .from('InA_time_entries')
+                .select('*, InA_profiles(*)')
                 .eq('company_id', companyId)
                 .order('created_at', { ascending: false });
             setEntries(entryData || []);
@@ -608,11 +608,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                                             <td className="px-8 py-5">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-black text-[10px] text-primary">
-                                                        {entry.profiles?.full_name?.substring(0, 2).toUpperCase()}
+                                                        {entry.InA_profiles?.full_name?.substring(0, 2).toUpperCase()}
                                                     </div>
                                                     <div>
-                                                        <p className="font-black text-xs">{entry.profiles?.full_name}</p>
-                                                        <p className="text-[9px] text-muted-foreground font-black uppercase">{entry.profiles?.national_id}</p>
+                                                        <p className="font-black text-xs">{entry.InA_profiles?.full_name}</p>
+                                                        <p className="text-[9px] text-muted-foreground font-black uppercase">{entry.InA_profiles?.national_id}</p>
                                                     </div>
                                                 </div>
                                             </td>

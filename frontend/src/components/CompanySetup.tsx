@@ -40,7 +40,7 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
         setError(null);
         try {
             const { data, error: fetchErr } = await supabase
-                .from('companies')
+                .from('InA_companies')
                 .select('*')
                 .eq('id', companyId)
                 .single();
@@ -71,7 +71,7 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
 
         try {
             const { error: saveErr } = await supabase
-                .from('companies')
+                .from('InA_companies')
                 .update({
                     name: company.name,
                     address: company.address,

@@ -23,8 +23,8 @@ export const AdminManagement: React.FC = () => {
         try {
             // Fetch Admins (profiles with role admin or superadmin)
             const { data: adminData } = await supabase
-                .from('profiles')
-                .select('*, companies(name)')
+                .from('InA_profiles')
+                .select('*, InA_companies(name)')
                 .in('role', ['admin', 'superadmin'])
                 .order('full_name');
 
@@ -32,7 +32,7 @@ export const AdminManagement: React.FC = () => {
 
             // Fetch Companies for assignment
             const { data: companyData } = await supabase
-                .from('companies')
+                .from('InA_companies')
                 .select('*')
                 .order('name');
 
@@ -53,7 +53,7 @@ export const AdminManagement: React.FC = () => {
         setStatus(null);
         try {
             const { error } = await supabase
-                .from('profiles')
+                .from('InA_profiles')
                 .upsert([{
                     ...formData,
                     national_id: formData.national_id.trim()
@@ -73,7 +73,7 @@ export const AdminManagement: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (!confirm('¿Estás seguro de eliminar este acceso administrativo?')) return;
         try {
-            const { error } = await supabase.from('profiles').delete().eq('id', id);
+            const { error } = await supabase.from('InA_profiles').delete().eq('id', id);
             if (error) throw error;
             fetchData();
         } catch (err: any) {
@@ -218,7 +218,7 @@ export const AdminManagement: React.FC = () => {
                                 <td className="px-10 py-6 font-mono text-xs font-bold text-muted-foreground">{admin.national_id}</td>
                                 <td className="px-10 py-6 font-mono text-xs font-bold text-primary tracking-widest">{admin.pin_code || '---'}</td>
                                 <td className="px-10 py-6">
-                                    <span className="font-bold text-sm text-primary uppercase">{admin.companies?.name || 'GLOBAL / TODAS'}</span>
+                                    <span className="font-bold text-sm text-primary uppercase">{admin.InA_companies?.name || 'GLOBAL / TODAS'}</span>
                                 </td>
                                 <td className="px-10 py-6">
                                     <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${admin.role === 'superadmin' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'

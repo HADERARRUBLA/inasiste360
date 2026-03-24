@@ -26,7 +26,7 @@ function App() {
   const fetchData = async (identifier: string) => {
     try {
       const { data: profile } = await supabase
-        .from('profiles')
+        .from('InA_profiles')
         .select('*')
         .eq('national_id', identifier)
         .maybeSingle();
@@ -38,7 +38,7 @@ function App() {
 
       setUserProfile(profile);
 
-      let query = supabase.from('companies').select('*').order('name');
+      let query = supabase.from('InA_companies').select('*').order('name');
       if (profile.role !== 'superadmin' && profile.company_id) {
         query = query.eq('id', profile.company_id);
       }
@@ -65,7 +65,7 @@ function App() {
     setLoginError(null);
     try {
       const { data: profile, error } = await supabase
-        .from('profiles')
+        .from('InA_profiles')
         .select('*')
         .eq('national_id', loginData.id)
         .eq('pin_code', loginData.pin)
@@ -86,7 +86,7 @@ function App() {
   useEffect(() => {
     const initApp = async () => {
       try {
-        const { data } = await supabase.from('companies').select('*').order('name');
+        const { data } = await supabase.from('InA_companies').select('*').order('name');
         if (data && data.length > 0) {
           setCompanies(data);
 

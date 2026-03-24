@@ -54,7 +54,7 @@ export const BranchManagement: React.FC = () => {
         setLoading(true);
         try {
             const { data, error } = await supabase
-                .from('companies')
+                .from('InA_companies')
                 .select('*')
                 .order('name');
             if (error) throw error;
@@ -78,14 +78,14 @@ export const BranchManagement: React.FC = () => {
         try {
             if (editingId) {
                 const { error } = await supabase
-                    .from('companies')
+                    .from('InA_companies')
                     .update(formData)
                     .eq('id', editingId);
                 if (error) throw error;
                 setStatus({ type: 'success', msg: 'Sede actualizada con éxito.' });
             } else {
                 const { error } = await supabase
-                    .from('companies')
+                    .from('InA_companies')
                     .insert([formData]);
                 if (error) throw error;
                 setStatus({ type: 'success', msg: 'Nueva sede creada con éxito.' });
@@ -113,7 +113,7 @@ export const BranchManagement: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (!confirm('¿Seguro que deseas eliminar esta sede? Esto afectará a todos los empleados asociados.')) return;
         try {
-            const { error } = await supabase.from('companies').delete().eq('id', id);
+            const { error } = await supabase.from('InA_companies').delete().eq('id', id);
             if (error) throw error;
             fetchBranches();
         } catch (err: any) {

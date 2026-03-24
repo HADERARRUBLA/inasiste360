@@ -31,7 +31,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setStatus({ type: 'loading', msg: 'Verificando PIN...' });
 
         const { data: user, error: userError } = await supabase
-            .from('profiles')
+            .from('InA_profiles')
             .select('*')
             .eq('company_id', companyId)
             .eq('pin_code', pin)
@@ -45,7 +45,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
         // Fetch last entry to determine state
         const { data: entry } = await supabase
-            .from('time_entries')
+            .from('InA_time_entries')
             .select('event_type, created_at')
             .eq('profile_id', user.id)
             .order('created_at', { ascending: false })
@@ -117,7 +117,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             }
         };
 
-        const { error } = await supabase.from('time_entries').insert([insertData]);
+        const { error } = await supabase.from('InA_time_entries').insert([insertData]);
 
         if (error) {
             setStatus({ type: 'error', msg: 'Error: ' + error.message });

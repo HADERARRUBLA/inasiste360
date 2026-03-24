@@ -14,6 +14,7 @@ El proyecto utiliza Supabase como backend. Se han detectado errores de restricci
     *   Si es hacia `profiles.id`, verificar que el nombre de la columna en `time_entries` sea realmente `user_id`.
 
 ## Reglas de Implementación
+*   **Prefijos de Tablas (IMPORTANTE)**: Todas las consultas a Supabase deben utilizar el prefijo `InA_` (ej. `InA_profiles`, `InA_time_entries`, `InA_companies`). **NUNCA** usar nombres de tabla sin el prefijo, ya que esto romperá la integridad de datos en el entorno productivo.
 *   **Neutralidad de Nombres**: Usar siempre los nombres de columna detectados en la DB, incluso si difieren de las convenciones de TypeScript (ajustar `types.ts` en consecuencia).
 *   **Manejo de Errores Críticos**:
     *   `null value in column "X" violates not-null constraint`: Añadir "X" al objeto de inserción.
