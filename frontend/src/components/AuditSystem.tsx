@@ -26,7 +26,7 @@ export const AuditSystem: React.FC<AuditSystemProps> = ({ companyId }) => {
         try {
             const { data, error } = await supabase
                 .from('InA_time_entries')
-                .select('*, InA_profiles(*)')
+                .select('*, profiles:InA_profiles(*)')
                 .eq('company_id', companyId as string)
                 .eq('date', filterDate)
                 .order('clock_in', { ascending: false });
