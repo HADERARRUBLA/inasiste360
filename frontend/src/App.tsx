@@ -9,11 +9,13 @@ import { BranchManagement } from './components/BranchManagement';
 import { AdminManagement } from './components/AdminManagement';
 import { AuditSystem } from './components/AuditSystem';
 
+import { OrganizationManagement } from './components/OrganizationManagement';
+
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations'>('dashboard');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [loginData, setLoginData] = useState({ id: '', pin: '' });
@@ -279,6 +281,12 @@ function App() {
             {userProfile?.role === 'superadmin' && (
               <>
                 <button
+                  onClick={() => setActiveTab('organizations')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'organizations' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+                >
+                  <Building2 className="w-4 h-4" /> Empresas (SaaS)
+                </button>
+                <button
                   onClick={() => setActiveTab('branches')}
                   className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'branches' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
                 >
@@ -323,6 +331,8 @@ function App() {
               <BranchManagement />
             ) : activeTab === 'admins' && userProfile?.role === 'superadmin' ? (
               <AdminManagement />
+            ) : activeTab === 'organizations' && userProfile?.role === 'superadmin' ? (
+              <OrganizationManagement />
             ) : (
               <div className="p-20 border-2 border-dashed rounded-[3rem] flex flex-col items-center justify-center text-muted-foreground bg-card animate-pulse">
                 <LayoutDashboard className="w-12 h-12 mb-4 opacity-20" />

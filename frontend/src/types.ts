@@ -11,8 +11,17 @@ export interface WeeklySchedule {
     [key: string]: DaySchedule;
 }
 
-export interface Company {
+export interface Organization {
     id: string;
+    name: string;
+    nit?: string;
+    is_active: boolean;
+    created_at?: string;
+}
+
+export interface Company { // USADA COMO SEDE
+    id: string;
+    organization_id: string;
     name: string;
     address?: string;
     lat_long: string | null;
@@ -20,11 +29,13 @@ export interface Company {
     night_shift_start_time?: string;
     extra_day_start_time?: string;
     created_at?: string;
+    InA_organizations?: Organization;
 }
 
 export interface Profile {
     id: string;
-    company_id: string | null;
+    organization_id: string | null;
+    company_id: string | null; // Sede principal
     full_name: string;
     national_id?: string;
     phone_number?: string;
@@ -42,6 +53,8 @@ export interface Profile {
     work_end_time?: string;
     work_schedule?: WeeklySchedule;
     role: UserRole;
+    InA_organizations?: Organization;
+    InA_companies?: Company; // Sede
 }
 
 export interface TimeEntry {

@@ -1,36 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, ShieldCheck, Mail, Building2, Trash2, X, Save, ShieldAlert, Key } from 'lucide-react';
+import { UserPlus, ShieldCheck, Mail, Building2, X, Save, ShieldAlert, Key, MapPin } from 'lucide-react';
 import type { UserRole, Company } from '../types';
 
 export const AdminManagement: React.FC = () => {
     const [admins, setAdmins] = useState<any[]>([]);
     const [companies, setCompanies] = useState<Company[]>([]);
+    const [organizations, setOrganizations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
     const [formData, setFormData] = useState({
+        id: '',
         full_name: '',
-        national_id: '', // Used as unique identifier/login in this system
+        national_id: '',
         company_id: '',
+        organization_id: '',
         role: 'admin' as UserRole,
-        pin_code: ''
+        pin_code: '',
+        managed_branches: [] as string[]
     });
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Fetch Admins (profiles with role admin or superadmin)
+            // Fetch Organizations
+            const { data: orgData } = await supabase
+                .from('InA_organizations')
+                .select('*')
+                .order('name');
+            setOrganizations(orgData || []);
+
+            // Fetch Admins with their organization and assigned branches
             const { data: adminData } = await supabase
                 .from('InA_profiles')
-                .select('*, InA_companies(name)')
+                .select(`
+                    *,
+                    organization:InA_organizations(name),
+                    assigned_branches:InA_admin_branches(company_id)
+                `)
                 .in('role', ['admin', 'superadmin'])
                 .order('full_name');
 
             setAdmins(adminData || []);
 
-            // Fetch Companies for assignment
+            // Fetch Companies
             const { data: companyData } = await supabase
                 .from('InA_companies')
                 .select('*')
@@ -48,28 +63,81 @@ export const AdminManagement: React.FC = () => {
         fetchData();
     }, []);
 
+    const handleEdit = (admin: any) => {
+        setFormData({
+            id: admin.id,
+            full_name: admin.full_name,
+            national_id: admin.national_id,
+            company_id: admin.company_id || '',
+            organization_id: admin.organization_id || '',
+            role: admin.role,
+            pin_code: admin.pin_code || '',
+            managed_branches: admin.assigned_branches?.map((b: any) => b.company_id) || []
+        });
+        setIsAdding(true);
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatus(null);
         try {
+            const { managed_branches, ...profileData } = formData;
+            
             const dataToSave = {
-                ...formData,
-                national_id: formData.national_id.trim(),
-                company_id: formData.company_id || null // If empty string, treat as null
+                ...profileData,
+                national_id: profileData.national_id.trim(),
+                company_id: profileData.company_id || null,
+                organization_id: profileData.organization_id || null
             };
 
-            const { error } = await supabase
+            // Remove id if it's empty to allow new insert if not found by national_id
+            if (!dataToSave.id) delete (dataToSave as any).id;
+
+            const { data: savedProfile, error } = await supabase
                 .from('InA_profiles')
-                .upsert([dataToSave], { onConflict: 'national_id' });
+                .upsert([dataToSave], { onConflict: 'national_id' })
+                .select()
+                .single();
 
-            if (error) throw error;
+            if (error) {
+                console.error('Error detail (Supabase):', error);
+                throw error;
+            }
+            console.log('Saved profile:', savedProfile);
 
-            setStatus({ type: 'success', msg: 'Administrador registrado con éxito.' });
+            // Handle branch assignments
+            if (savedProfile) {
+                // Delete previous assignments
+                await supabase.from('InA_admin_branches').delete().eq('profile_id', savedProfile.id);
+
+                // Insert new ones
+                if (managed_branches.length > 0) {
+                    const branchAssignments = managed_branches.map(branchId => ({
+                        profile_id: savedProfile.id,
+                        company_id: branchId
+                    }));
+                    const { error: branchError } = await supabase
+                        .from('InA_admin_branches')
+                        .insert(branchAssignments);
+                    if (branchError) throw branchError;
+                }
+            }
+
+            setStatus({ type: 'success', msg: 'Administrador guardado con éxito.' });
             setIsAdding(false);
-            setFormData({ full_name: '', national_id: '', company_id: '', role: 'admin', pin_code: '' });
+            setFormData({ 
+                id: '', 
+                full_name: '', 
+                national_id: '', 
+                company_id: '', 
+                organization_id: '', 
+                role: 'admin', 
+                pin_code: '',
+                managed_branches: []
+            });
             fetchData();
         } catch (err: any) {
-            setStatus({ type: 'error', msg: 'Error al registrar administrador: ' + err.message });
+            setStatus({ type: 'error', msg: 'Error al guardar: ' + err.message });
         }
     };
 
@@ -129,12 +197,28 @@ export const AdminManagement: React.FC = () => {
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
+                                    <Building2 className="w-3 h-3" /> Organización (Empresa SaaS)
+                                </label>
+                                <select
+                                    required
+                                    value={formData.organization_id}
+                                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, organization_id: e.target.value })}
+                                    className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
+                                >
+                                    <option value="">Seleccionar organización...</option>
+                                    {organizations.map((org: any) => (
+                                        <option key={org.id} value={org.id}>{org.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
                                     <Mail className="w-3 h-3" /> Identificador (Email o Cédula)
                                 </label>
                                 <input
                                     required
                                     value={formData.national_id}
-                                    onChange={e => setFormData({ ...formData, national_id: e.target.value })}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, national_id: e.target.value })}
                                     className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
                                     placeholder="Usuario (Cédula/Email)"
                                 />
@@ -157,19 +241,31 @@ export const AdminManagement: React.FC = () => {
                         <div className="space-y-6">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
-                                    <Building2 className="w-3 h-3" /> Sede Asignada
+                                    <MapPin className="w-3 h-3" /> Sedes Autorizadas
                                 </label>
-                                <select
-                                    required
-                                    value={formData.company_id}
-                                    onChange={e => setFormData({ ...formData, company_id: e.target.value })}
-                                    className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
-                                >
-                                    <option value="">Seleccionar sede...</option>
-                                    {companies.map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </select>
+                                <div className="grid grid-cols-1 gap-2 p-4 border-2 border-muted rounded-2xl max-h-40 overflow-y-auto bg-muted/5">
+                                    {companies
+                                        .filter(c => !formData.organization_id || c.organization_id === formData.organization_id)
+                                        .map((company: Company) => (
+                                            <label key={company.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.managed_branches.includes(company.id)}
+                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                                        const branches = e.target.checked
+                                                            ? [...formData.managed_branches, company.id]
+                                                            : formData.managed_branches.filter(id => id !== company.id);
+                                                        setFormData({ ...formData, managed_branches: branches });
+                                                    }}
+                                                    className="w-4 h-4 rounded text-primary focus:ring-primary"
+                                                />
+                                                <span className="text-sm font-bold">{company.name}</span>
+                                            </label>
+                                        ))}
+                                    {companies.filter((c: Company) => !formData.organization_id || c.organization_id === formData.organization_id).length === 0 && (
+                                        <p className="text-[10px] text-muted-foreground font-bold uppercase p-2">No hay sedes para esta organización</p>
+                                    )}
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
@@ -205,9 +301,8 @@ export const AdminManagement: React.FC = () => {
                     <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                         <tr>
                             <th className="px-10 py-6">Administrador</th>
-                            <th className="px-10 py-6">Identificador</th>
-                            <th className="px-10 py-6">Clave (PIN)</th>
-                            <th className="px-10 py-6">Sede Asignada</th>
+                            <th className="px-10 py-6">Organización</th>
+                            <th className="px-10 py-6">Sedes Autorizadas</th>
                             <th className="px-10 py-6">Rol</th>
                             <th className="px-10 py-6 text-right">Acciones</th>
                         </tr>
@@ -215,13 +310,22 @@ export const AdminManagement: React.FC = () => {
                     <tbody className="divide-y">
                         {loading ? (
                             <tr><td colSpan={5} className="px-10 py-20 text-center animate-pulse font-black text-xs uppercase tracking-widest">Sincronizando Accesos...</td></tr>
-                        ) : admins.map(admin => (
+                        ) : admins.map((admin: any) => (
                             <tr key={admin.id} className="hover:bg-primary/5 transition-colors group">
                                 <td className="px-10 py-6 font-black text-lg">{admin.full_name}</td>
-                                <td className="px-10 py-6 font-mono text-xs font-bold text-muted-foreground">{admin.national_id}</td>
-                                <td className="px-10 py-6 font-mono text-xs font-bold text-primary tracking-widest">{admin.pin_code || '---'}</td>
                                 <td className="px-10 py-6">
-                                    <span className="font-bold text-sm text-primary uppercase">{admin.InA_companies?.name || 'GLOBAL / TODAS'}</span>
+                                    <span className="font-bold text-sm text-primary uppercase">{admin.organization?.name || '---'}</span>
+                                </td>
+                                <td className="px-10 py-6">
+                                    <div className="flex flex-wrap gap-1">
+                                        {admin.assigned_branches?.length > 0 ? (
+                                            <span className="px-2 py-1 bg-primary/10 text-primary rounded-md text-[10px] font-black uppercase">
+                                                {admin.assigned_branches.length} Sedes
+                                            </span>
+                                        ) : (
+                                            <span className="text-[10px] font-bold text-muted-foreground uppercase italic">Sin sedes</span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td className="px-10 py-6">
                                     <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${admin.role === 'superadmin' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
@@ -229,8 +333,9 @@ export const AdminManagement: React.FC = () => {
                                         {admin.role}
                                     </span>
                                 </td>
-                                <td className="px-10 py-6 text-right text-red-500 font-black cursor-pointer hover:underline" onClick={() => handleDelete(admin.id)}>
-                                    <Trash2 className="w-4 h-4 ml-auto" />
+                                <td className="px-10 py-6 text-right space-x-4">
+                                    <button onClick={() => handleEdit(admin)} className="text-primary hover:underline font-black text-[10px] uppercase">Editar</button>
+                                    <button onClick={() => handleDelete(admin.id)} className="text-red-500 hover:underline font-black text-[10px] uppercase">Eliminar</button>
                                 </td>
                             </tr>
                         ))}

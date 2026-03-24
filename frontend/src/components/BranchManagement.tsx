@@ -4,7 +4,8 @@ import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius } 
 import type { Company } from '../types';
 
 export const BranchManagement: React.FC = () => {
-    const [branches, setBranches] = useState<Company[]>([]);
+    const [branches, setBranches] = useState<any[]>([]);
+    const [organizations, setOrganizations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -14,7 +15,8 @@ export const BranchManagement: React.FC = () => {
         name: '',
         address: '',
         lat_long: '',
-        radius_limit: 100
+        radius_limit: 100,
+        organization_id: ''
     });
 
     const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -53,9 +55,13 @@ export const BranchManagement: React.FC = () => {
     const fetchBranches = async () => {
         setLoading(true);
         try {
+            // Fetch Orgs
+            const { data: orgs } = await supabase.from('InA_organizations').select('*').order('name');
+            setOrganizations(orgs || []);
+
             const { data, error } = await supabase
                 .from('InA_companies')
-                .select('*')
+                .select('*, organization:InA_organizations(name)')
                 .order('name');
             if (error) throw error;
             setBranches(data || []);
@@ -75,36 +81,42 @@ export const BranchManagement: React.FC = () => {
         e.preventDefault();
         setStatus(null);
 
+        const dataToSave = {
+            ...formData,
+            organization_id: formData.organization_id || null
+        };
+
         try {
             if (editingId) {
                 const { error } = await supabase
                     .from('InA_companies')
-                    .update(formData)
+                    .update(dataToSave)
                     .eq('id', editingId);
                 if (error) throw error;
                 setStatus({ type: 'success', msg: 'Sede actualizada con éxito.' });
             } else {
                 const { error } = await supabase
                     .from('InA_companies')
-                    .insert([formData]);
+                    .insert([dataToSave]);
                 if (error) throw error;
                 setStatus({ type: 'success', msg: 'Nueva sede creada con éxito.' });
             }
             setIsAdding(false);
             setEditingId(null);
-            setFormData({ name: '', address: '', lat_long: '', radius_limit: 100 });
+            setFormData({ name: '', address: '', lat_long: '', radius_limit: 100, organization_id: '' });
             fetchBranches();
         } catch (err: any) {
             setStatus({ type: 'error', msg: 'Error al guardar: ' + err.message });
         }
     };
 
-    const handleEdit = (branch: Company) => {
+    const handleEdit = (branch: any) => {
         setFormData({
             name: branch.name,
             address: branch.address || '',
             lat_long: branch.lat_long || '',
-            radius_limit: branch.radius_limit
+            radius_limit: branch.radius_limit,
+            organization_id: branch.organization_id || ''
         });
         setEditingId(branch.id);
         setIsAdding(true);
@@ -152,6 +164,22 @@ export const BranchManagement: React.FC = () => {
                     </button>
                     <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
+                                    <Building2 className="w-3 h-3" /> Organización (Empresa SaaS)
+                                </label>
+                                <select
+                                    required
+                                    value={formData.organization_id}
+                                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, organization_id: e.target.value })}
+                                    className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
+                                >
+                                    <option value="">Seleccionar organización...</option>
+                                    {organizations.map((org: any) => (
+                                        <option key={org.id} value={org.id}>{org.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
                                     <Building2 className="w-3 h-3" /> Nombre de la Sede
@@ -231,7 +259,7 @@ export const BranchManagement: React.FC = () => {
                     <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                         <tr>
                             <th className="px-10 py-6">Información de Sede</th>
-                            <th className="px-10 py-6">Ubicación GPS</th>
+                            <th className="px-10 py-6">Organización</th>
                             <th className="px-10 py-6">Parámetros</th>
                             <th className="px-10 py-6 text-right">Acciones</th>
                         </tr>
@@ -254,9 +282,14 @@ export const BranchManagement: React.FC = () => {
                                         </div>
                                     </div>
                                 </td>
-                                <td className="px-10 py-8 font-mono text-xs text-muted-foreground font-bold">{branch.lat_long || 'N/A'}</td>
                                 <td className="px-10 py-8">
-                                    <span className="px-3 py-1 bg-muted rounded-lg text-[10px] font-black uppercase">Radio: {branch.radius_limit}m</span>
+                                    <span className="font-bold text-sm text-primary uppercase">{branch.organization?.name || 'GLOBAL'}</span>
+                                </td>
+                                <td className="px-10 py-8">
+                                    <div className="space-y-1">
+                                        <span className="block px-3 py-1 bg-muted rounded-lg text-[10px] font-black uppercase">Radio: {branch.radius_limit}m</span>
+                                        <span className="block font-mono text-[9px] text-muted-foreground">{branch.lat_long || 'N/A'}</span>
+                                    </div>
                                 </td>
                                 <td className="px-10 py-8 text-right">
                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
