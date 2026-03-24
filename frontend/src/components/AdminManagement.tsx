@@ -38,7 +38,7 @@ export const AdminManagement: React.FC = () => {
                 .select(`
                     *,
                     organization:InA_organizations(name),
-                    assigned_branches:InA_admin_branches(company_id)
+                    assigned_branches:InA_admin_branches(branch_id)
                 `)
                 .in('role', ['admin', 'superadmin'])
                 .order('full_name');
