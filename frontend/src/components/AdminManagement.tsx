@@ -52,12 +52,15 @@ export const AdminManagement: React.FC = () => {
         e.preventDefault();
         setStatus(null);
         try {
+            const dataToSave = {
+                ...formData,
+                national_id: formData.national_id.trim(),
+                company_id: formData.company_id || null // If empty string, treat as null
+            };
+
             const { error } = await supabase
                 .from('InA_profiles')
-                .upsert([{
-                    ...formData,
-                    national_id: formData.national_id.trim()
-                }]);
+                .upsert([dataToSave], { onConflict: 'national_id' });
 
             if (error) throw error;
 

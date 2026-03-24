@@ -54,6 +54,7 @@
 | 04/03 | N/A | Inicio de tarea | N/A |
 | 04/03 | 403 Forbidden | Token MCP sin permisos repo | Crear repo manualmente y usar el link proporcionado por el usuario |
 | 07/03 | 404 Not Found (Vercel) | App en subdirectorio `frontend/` sin config raíz | Crear `vercel.json` en raíz con comandos de build apuntando a `frontend/` |
+| 24/03 | Desfase Vercel/Local | El despliegue en Vercel no reflejaba los cambios de prefijo `InA_` | `git push -f origin master` para forzar sincronización y disparar redeploy |
 
 ## 7. Ejemplos de Uso
 
