@@ -72,7 +72,7 @@ export const AdminManagement: React.FC = () => {
             organization_id: admin.organization_id || '',
             role: admin.role,
             pin_code: admin.pin_code || '',
-            managed_branches: admin.assigned_branches?.map((b: any) => b.company_id) || []
+            managed_branches: admin.assigned_branches?.map((b: any) => b.branch_id) || []
         });
         setIsAdding(true);
     };
@@ -108,13 +108,13 @@ export const AdminManagement: React.FC = () => {
             // Handle branch assignments
             if (savedProfile) {
                 // Delete previous assignments
-                await supabase.from('InA_admin_branches').delete().eq('profile_id', savedProfile.id);
+                await supabase.from('InA_admin_branches').delete().eq('admin_id', savedProfile.id);
 
                 // Insert new ones
                 if (managed_branches.length > 0) {
                     const branchAssignments = managed_branches.map(branchId => ({
-                        profile_id: savedProfile.id,
-                        company_id: branchId
+                        admin_id: savedProfile.id,
+                        branch_id: branchId
                     }));
                     const { error: branchError } = await supabase
                         .from('InA_admin_branches')

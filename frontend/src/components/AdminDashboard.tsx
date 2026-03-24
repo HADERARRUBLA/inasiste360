@@ -278,6 +278,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         return matchesSearch && matchesDate && matchesProfile;
     });
 
+    const exportToICG = () => {
+        const rows: any[] = [['CodEmpleado', 'Fecha', 'Concepto', 'Unidades', 'Descripcion']];
+        
+        const totalsByEmployee = filteredEntries.reduce((acc: any, curr) => {
+            if (!curr.profile_id) return acc;
+            const date = curr.date || curr.created_at?.split('T')[0];
+            if (!date) return acc;
+
+            const profile = profiles.find(p => p.id === curr.profile_id);
+            if (!acc[curr.profile_id]) {
+                acc[curr.profile_id] = {
+                    name: profile?.full_name || 'N/A',
+                    national_id: profile?.national_id || 'N/A',
+                    days: {}
+                };
+            }
+            if (!acc[curr.profile_id].days[date]) acc[curr.profile_id].days[date] = [];
+            acc[curr.profile_id].days[date].push(curr);
+            return acc;
+        }, {});
+
+        Object.values(totalsByEmployee).forEach((emp: any) => {
+            Object.keys(emp.days).forEach(dateStr => {
+                let dOrd = 0, dExtD = 0, dExtN = 0, dDom = 0;
+                const dayEntries = emp.days[dateStr];
+                const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+                const profile = profiles.find(p => p.national_id === emp.national_id);
+                const dateObj = new Date(dateStr + 'T12:00:00');
+                const dayCode = dayMap[dateObj.getDay()];
+                const profileSched = profile?.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+                const isSunday = dateObj.getDay() === 0;
+
+                sorted.forEach((e: any, idx: number) => {
+                    if (e.event_type !== 'in') return;
+                    const start = new Date(e.created_at!);
+                    const next = sorted[idx + 1];
+                    const end = next ? new Date(next.created_at!) : (dateStr === new Date().toLocaleDateString('en-CA') ? new Date() : start);
+                    const diff = (end.getTime() - start.getTime()) / 60000;
+
+                    const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
+                    const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
+                    const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
+                    const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
+
+                    const getOverlap = (t1: Date, t2: Date) => {
+                        const os = new Date(Math.max(start.getTime(), t1.getTime()));
+                        const oe = new Date(Math.min(end.getTime(), t2.getTime()));
+                        return Math.max(0, (oe.getTime() - os.getTime()) / 60000);
+                    };
+
+                    if (isSunday) {
+                        dDom += diff;
+                    } else {
+                        dOrd += getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
+                        dExtD += getOverlap(schedThreshold, nightThreshold);
+                        dExtN += getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
+                    }
+                });
+
+                if (dOrd > 0) rows.push([emp.national_id, dateStr, '1', (dOrd / 60).toFixed(2), 'HE Ordinarias']);
+                if (dExtD > 0) rows.push([emp.national_id, dateStr, '2', (dExtD / 60).toFixed(2), 'HE Diurnas']);
+                if (dExtN > 0) rows.push([emp.national_id, dateStr, '3', (dExtN / 60).toFixed(2), 'HE Nocturnas']);
+                if (dDom > 0) rows.push([emp.national_id, dateStr, '4', (dDom / 60).toFixed(2), 'Recargo Dominical']);
+            });
+        });
+
+        const csvContent = rows.map(r => r.map((cell: any) => `"${cell}"`).join(',')).join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `ICG_Import_${dateRange.start}_a_${dateRange.end}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const exportToCSV = () => {
         // 1. Raw Logs Session
         const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo'];
@@ -637,6 +715,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                         <button onClick={() => setReportType('hours')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'hours' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>2. Horas Detalladas</button>
                         <button onClick={() => setReportType('alerts')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'alerts' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>3. Novedades</button>
                         <div className="ml-auto">
+                            <button onClick={exportToICG} className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95 mr-2">
+                                <FileDown className="w-4 h-4" /> EXPORTAR ICG
+                            </button>
                             <button onClick={exportToCSV} className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-green-700 transition-all active:scale-95">
                                 <FileDown className="w-4 h-4" /> DESCARGAR EXCEL COMPLETO
                             </button>

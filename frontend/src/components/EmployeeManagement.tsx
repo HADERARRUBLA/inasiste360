@@ -57,7 +57,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         work_schedule: { ...DEFAULT_SCHEDULE } as any,
         face_vector: null as number[] | null,
         profile_photo: null as string | null,
-        company_id: ''
+        company_id: '',
+        organization_id: null as string | null
     });
 
     useEffect(() => {
@@ -80,7 +81,19 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
     const fetchInitialData = async () => {
         if (!companyId) return;
-        setFormData(prev => ({ ...prev, company_id: companyId }));
+        
+        // Fetch company details to get organization_id
+        const { data: comp } = await supabase
+            .from('InA_companies')
+            .select('organization_id')
+            .eq('id', companyId)
+            .single();
+            
+        setFormData(prev => ({ 
+            ...prev, 
+            company_id: companyId,
+            organization_id: comp?.organization_id || null
+        }));
         await fetchProfiles(companyId);
     };
 
@@ -92,14 +105,16 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         }
         setLoading(true);
         try {
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('InA_profiles')
                 .select('*')
                 .eq('company_id', targetId as string)
                 .order('full_name');
+            if (error) throw error;
             setProfiles(data || []);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error fetching profiles:', err);
+            alert('Error cargando empleados: ' + err.message);
         } finally {
             setLoading(false);
         }
@@ -123,7 +138,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             work_schedule: { ...DEFAULT_SCHEDULE, ...(profile.work_schedule || {}) },
             face_vector: profile.face_vector || null,
             profile_photo: profile.profile_photo || null,
-            company_id: profile.company_id || ''
+            company_id: profile.company_id || '',
+            organization_id: profile.organization_id || null
         });
         setEditingId(profile.id);
         setFaceCaptures([]);
@@ -145,12 +161,17 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                     const newCaptures = [...faceCaptures, Array.from(detections.descriptor)];
                     setFaceCaptures(newCaptures);
 
+                    // Also save the photo on the first capture if not already set
+                    if (newCaptures.length === 1) {
+                        setFormData(prev => ({ ...prev, profile_photo: imageSrc }));
+                    }
+
                     if (newCaptures.length >= 3) {
                         // Average the vectors
                         const avgVector = newCaptures[0].map((_, i) =>
                             newCaptures.reduce((acc, cap) => acc + cap[i], 0) / newCaptures.length
                         );
-                        setFormData({ ...formData, face_vector: avgVector });
+                        setFormData(prev => ({ ...prev, face_vector: avgVector }));
                         setIsCameraActive(false);
                     }
                 } else {
@@ -163,21 +184,30 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        if (!formData.company_id) {
+            alert('Error: No hay sede seleccionada.');
+            return;
+        }
+
         let error;
-        const submitData = { ...formData };
+        // Clean data - ensure we don't send any derived or nested objects if they accidentally got in
+        const payload = { ...formData };
+        
+        console.log('Guardando empleado con:', { ...payload, profile_photo: payload.profile_photo ? 'BASE64_IMAGE' : null });
 
         if (editingId) {
             const { error: err } = await supabase
                 .from('InA_profiles')
-                .update(submitData)
+                .update(payload)
                 .eq('id', editingId);
             error = err;
         } else {
-            const { error: err } = await supabase.from('InA_profiles').insert([submitData]);
+            const { error: err } = await supabase.from('InA_profiles').insert([payload]);
             error = err;
         }
 
         if (!error) {
+            console.log('Empleado guardado exitosamente');
             setIsAdding(false);
             setEditingId(null);
             setFaceCaptures([]);
@@ -202,7 +232,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             }));
             fetchProfiles();
         } else {
-            alert('Error al guardar: ' + error.message);
+            console.error('Error de Supabase al guardar:', error);
+            alert('Error crítico al guardar: ' + error.message + '\nDetalles: ' + (error.details || 'Ver consola'));
         }
     };
 
