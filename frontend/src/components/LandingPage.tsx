@@ -70,42 +70,104 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
 
   const Navbar = () => {
     const [isScrolled, setIsScrolled] = useState(false);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+
     useEffect(() => {
       const handleScroll = () => setIsScrolled(window.scrollY > 20);
       window.addEventListener('scroll', handleScroll);
       return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
+    const navItems: { id: View; label: string }[] = [
+      { id: 'landing', label: 'Inteligencia' },
+      { id: 'dashboard', label: 'Comando' },
+      { id: 'roi', label: 'Motor de ROI' }
+    ];
+
     return (
-      <nav className={`fixed top-0 w-full z-50 transition-all duration-500 px-8 h-32 flex justify-between items-center ${isScrolled ? 'bg-exec-bg/80 backdrop-blur-xl border-b border-exec-outline/15 shadow-2xl' : 'bg-transparent'}`}>
-        <div className="flex items-center gap-10">
-          <motion.div 
-            className="flex items-center cursor-pointer"
-            onClick={() => setView('landing')}
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          >
-            <div className="relative w-24 h-24">
-              <div className="absolute inset-2 bg-white/15 backdrop-blur-sm rounded-full z-0 border border-white/20 shadow-xl"></div>
-               <motion.div 
-                className="absolute inset-[-5%] border-t-2 border-exec-primary/40 rounded-full"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-              />
-              <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
+      <>
+        <nav className={`fixed top-0 w-full z-50 transition-all duration-500 px-6 sm:px-8 h-24 md:h-32 flex justify-between items-center ${isScrolled || isMenuOpen ? 'bg-exec-bg/95 backdrop-blur-xl border-b border-exec-outline/15 shadow-2xl' : 'bg-transparent'}`}>
+          <div className="flex items-center gap-4 md:gap-10">
+            <motion.div 
+              className="flex items-center cursor-pointer"
+              onClick={() => { setView('landing'); setIsMenuOpen(false); }}
+              animate={{ scale: [1, 1.05, 1] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <div className="relative w-16 h-16 md:w-24 md:h-24">
+                <div className="absolute inset-1.5 md:inset-2 bg-white/15 backdrop-blur-sm rounded-full z-0 border border-white/20 shadow-xl"></div>
+                 <motion.div 
+                  className="absolute inset-[-5%] border-t-2 border-exec-primary/40 rounded-full"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                />
+                <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-3 md:p-4" />
+              </div>
+            </motion.div>
+            
+            {/* Nav Desktop */}
+            <div className="hidden lg:flex items-center gap-10 ml-4">
+              {navItems.map(item => (
+                <button 
+                  key={item.id}
+                  onClick={() => setView(item.id)} 
+                  className={`font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] transition-all ${view === item.id ? 'text-exec-primary border-b-2 border-exec-primary pb-1' : 'text-exec-on-variant/50 hover:text-exec-on-surface'}`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
-          </motion.div>
-          <div className="hidden lg:flex items-center gap-10 ml-4">
-            <button onClick={() => setView('landing')} className={`font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] transition-all ${view === 'landing' ? 'text-exec-primary border-b-2 border-exec-primary pb-1' : 'text-exec-on-variant/50 hover:text-exec-on-surface'}`}>Inteligencia</button>
-            <button onClick={() => setView('dashboard')} className={`font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] transition-all ${view === 'dashboard' ? 'text-exec-primary border-b-2 border-exec-primary pb-1' : 'text-exec-on-variant/50 hover:text-exec-on-surface'}`}>Comando</button>
-            <button onClick={() => setView('roi')} className={`font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] transition-all ${view === 'roi' ? 'text-exec-primary border-b-2 border-exec-primary pb-1' : 'text-exec-on-variant/50 hover:text-exec-on-surface'}`}>Motor de ROI</button>
           </div>
-        </div>
-        <div className="flex items-center gap-6">
-          <button onClick={onLoginClick} className="hidden sm:block text-exec-on-variant/60 font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] px-4 py-2 hover:text-exec-primary transition-all">Acceso VIP</button>
-          <button onClick={() => window.open(CTA_LINK, '_blank')} className="bg-[#0047ab] text-white px-8 py-3 rounded-md exec-metallic-edge font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] hover:brightness-110 active:scale-95 transition-all shadow-xl">Detener Fugas de Nómina</button>
-        </div>
-      </nav>
+
+          <div className="flex items-center gap-3 sm:gap-6">
+            <button onClick={onLoginClick} className="hidden sm:block text-exec-on-variant/60 font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] px-4 py-2 hover:text-exec-primary transition-all">Acceso VIP</button>
+            <button onClick={() => window.open(CTA_LINK, '_blank')} className="bg-[#0047ab] text-white px-4 sm:px-8 py-2.5 sm:py-3 rounded-md exec-metallic-edge font-sans uppercase tracking-[0.08em] font-bold text-[0.6rem] sm:text-[0.7rem] hover:brightness-110 active:scale-95 transition-all shadow-xl">Detener Fugas</button>
+            <button 
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="lg:hidden p-2 text-exec-on-surface hover:text-exec-primary transition-colors"
+            >
+              {isMenuOpen ? <X className="w-8 h-8" /> : <Menu className="w-8 h-8" />}
+            </button>
+          </div>
+        </nav>
+
+        {/* Mobile Menu Overlay */}
+        <AnimatePresence>
+          {isMenuOpen && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="fixed inset-0 z-40 bg-exec-bg pt-32 px-10 lg:hidden overflow-hidden"
+            >
+              <div className="absolute inset-0 exec-point-cloud opacity-10 pointer-events-none" />
+              <div className="flex flex-col gap-8 items-center justify-center h-full pb-20">
+                {navItems.map((item, idx) => (
+                  <motion.button
+                    key={item.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    onClick={() => { setView(item.id); setIsMenuOpen(false); }}
+                    className={`w-full text-center py-6 text-2xl font-black uppercase tracking-[0.2em] transition-all ${view === item.id ? 'text-exec-primary border-b-2 border-exec-primary/30' : 'text-exec-on-variant/40 hover:text-exec-on-surface'}`}
+                  >
+                    {item.label}
+                  </motion.button>
+                ))}
+                <motion.button 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  onClick={() => { onLoginClick(); setIsMenuOpen(false); }}
+                  className="mt-8 px-10 py-5 border border-exec-outline/20 rounded-full text-exec-on-surface font-bold uppercase tracking-widest text-sm"
+                >
+                  Acceso VIP
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </>
     );
   };
 
