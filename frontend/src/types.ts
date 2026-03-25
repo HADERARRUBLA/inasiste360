@@ -28,6 +28,7 @@ export interface Company { // USADA COMO SEDE
     radius_limit: number;
     night_shift_start_time?: string;
     extra_day_start_time?: string;
+    work_schedule?: WeeklySchedule;
     created_at?: string;
     InA_organizations?: Organization;
 }

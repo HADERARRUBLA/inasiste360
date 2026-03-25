@@ -1,7 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius } from 'lucide-react';
+import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius, CheckCircle2 } from 'lucide-react';
 import type { Company } from '../types';
+
+const DEFAULT_SCHEDULE = {
+    mon: { start: '08:00', end: '17:00', active: true },
+    tue: { start: '08:00', end: '17:00', active: true },
+    wed: { start: '08:00', end: '17:00', active: true },
+    thu: { start: '08:00', end: '17:00', active: true },
+    fri: { start: '08:00', end: '17:00', active: true },
+    sat: { start: '08:00', end: '13:00', active: true },
+    sun: { start: '08:00', end: '13:00', active: false },
+};
+
+const dayNames: { [key: string]: string } = {
+    mon: 'Lunes',
+    tue: 'Martes',
+    wed: 'Miércoles',
+    thu: 'Jueves',
+    fri: 'Viernes',
+    sat: 'Sábado',
+    sun: 'Domingo',
+};
 
 export const BranchManagement: React.FC = () => {
     const [branches, setBranches] = useState<any[]>([]);
@@ -16,7 +36,8 @@ export const BranchManagement: React.FC = () => {
         address: '',
         lat_long: '',
         radius_limit: 100,
-        organization_id: ''
+        organization_id: '',
+        work_schedule: { ...DEFAULT_SCHEDULE } as any
     });
 
     const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -103,7 +124,7 @@ export const BranchManagement: React.FC = () => {
             }
             setIsAdding(false);
             setEditingId(null);
-            setFormData({ name: '', address: '', lat_long: '', radius_limit: 100, organization_id: '' });
+            setFormData({ name: '', address: '', lat_long: '', radius_limit: 100, organization_id: '', work_schedule: { ...DEFAULT_SCHEDULE } as any });
             fetchBranches();
         } catch (err: any) {
             setStatus({ type: 'error', msg: 'Error al guardar: ' + err.message });
@@ -116,7 +137,8 @@ export const BranchManagement: React.FC = () => {
             address: branch.address || '',
             lat_long: branch.lat_long || '',
             radius_limit: branch.radius_limit,
-            organization_id: branch.organization_id || ''
+            organization_id: branch.organization_id || '',
+            work_schedule: branch.work_schedule || { ...DEFAULT_SCHEDULE }
         });
         setEditingId(branch.id);
         setIsAdding(true);
@@ -230,20 +252,91 @@ export const BranchManagement: React.FC = () => {
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
-                                    <Radius className="w-3 h-3" /> Radio Geovalla (Metros): {formData.radius_limit}m
-                                </label>
-                                <input
-                                    type="range"
-                                    min="20"
-                                    max="500"
-                                    step="10"
-                                    value={formData.radius_limit}
-                                    onChange={e => setFormData({ ...formData, radius_limit: parseInt(e.target.value) })}
-                                    className="w-full accent-primary h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                                />
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
+                                        <Radius className="w-3 h-3" /> Radio Geovalla (Metros): {formData.radius_limit}m
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="20"
+                                        max="500"
+                                        step="10"
+                                        value={formData.radius_limit}
+                                        onChange={e => setFormData({ ...formData, radius_limit: parseInt(e.target.value) })}
+                                        className="w-full accent-primary h-2 bg-muted rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
                             </div>
-                        </div>
+
+                            {/* Gestión de Jornada (NUEVO) */}
+                            <div className="md:col-span-2 p-8 bg-muted/10 border-2 border-primary/5 rounded-[2rem] space-y-6 mt-4">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-black uppercase tracking-widest text-foreground flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-primary" /> Horario de Atención de Sede (Predefinido)
+                                    </h4>
+                                    <p className="text-[9px] font-black text-muted-foreground uppercase opacity-70">Define los límites para las alertas de puntualidad</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-12 gap-4 px-4 py-2 text-[8px] font-black uppercase text-muted-foreground tracking-widest border-b border-primary/5">
+                                        <div className="col-span-3">Día</div>
+                                        <div className="col-span-1 text-center">Activo</div>
+                                        <div className="col-span-4 text-center">Entrada</div>
+                                        <div className="col-span-4 text-center">Salida</div>
+                                    </div>
+                                    {Object.keys(DEFAULT_SCHEDULE).map((day) => {
+                                        const dayData = formData.work_schedule?.[day] || (DEFAULT_SCHEDULE as any)[day];
+                                        return (
+                                            <div key={day} className={`grid grid-cols-12 gap-4 items-center p-3 border rounded-2xl transition-all ${dayData?.active ? 'bg-primary/5 border-primary/10' : 'opacity-40 bg-muted/5 border-transparent'}`}>
+                                                <div className="col-span-3 font-black text-[11px] uppercase tracking-tight">{dayNames[day]}</div>
+                                                <div className="col-span-1 flex justify-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={dayData?.active || false}
+                                                        onChange={e => {
+                                                            const newSched = {
+                                                                ...formData.work_schedule,
+                                                                [day]: { ...(dayData || {}), active: e.target.checked }
+                                                            };
+                                                            setFormData({ ...formData, work_schedule: newSched });
+                                                        }}
+                                                        className="w-4 h-4 accent-primary"
+                                                    />
+                                                </div>
+                                                <div className="col-span-4">
+                                                    <input
+                                                        type="time"
+                                                        disabled={!dayData?.active}
+                                                        value={dayData?.start || '08:00'}
+                                                        onChange={e => {
+                                                            const newSched = {
+                                                                ...formData.work_schedule,
+                                                                [day]: { ...(dayData || {}), start: e.target.value }
+                                                            };
+                                                            setFormData({ ...formData, work_schedule: newSched });
+                                                        }}
+                                                        className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                                    />
+                                                </div>
+                                                <div className="col-span-4">
+                                                    <input
+                                                        type="time"
+                                                        disabled={!dayData?.active}
+                                                        value={dayData?.end || '17:00'}
+                                                        onChange={e => {
+                                                            const newSched = {
+                                                                ...formData.work_schedule,
+                                                                [day]: { ...(dayData || {}), end: e.target.value }
+                                                            };
+                                                            setFormData({ ...formData, work_schedule: newSched });
+                                                        }}
+                                                        className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
 
                         <div className="md:col-span-2 flex justify-end">
                             <button type="submit" className="flex items-center gap-3 px-12 py-4 bg-primary text-primary-foreground rounded-2xl font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">

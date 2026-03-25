@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
-import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight } from 'lucide-react';
 import { KioskMode } from './components/KioskMode';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EmployeeManagement } from './components/EmployeeManagement';
@@ -10,10 +10,12 @@ import { AdminManagement } from './components/AdminManagement';
 import { AuditSystem } from './components/AuditSystem';
 
 import { OrganizationManagement } from './components/OrganizationManagement';
+import { LandingPage } from './components/LandingPage';
 
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations'>('dashboard');
   const [companies, setCompanies] = useState<any[]>([]);
@@ -142,10 +144,22 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !showLogin) {
+    return <LandingPage onLoginClick={() => setShowLogin(true)} />;
+  }
+
+  if (!isAuthenticated && showLogin) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6 relative overflow-hidden font-sans">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-primary/10 -z-10" />
+        
+        <button 
+          onClick={() => setShowLogin(false)}
+          className="absolute top-10 left-10 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
+        >
+          <ArrowRight className="w-4 h-4 rotate-180" /> Volver
+        </button>
+
         <div className="w-full max-w-md space-y-8 animate-in fade-in zoom-in duration-500">
           <div className="text-center space-y-2">
             <div className="inline-flex mb-2 hover:scale-105 transition-transform duration-500">

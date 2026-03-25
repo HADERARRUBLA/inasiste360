@@ -1,37 +1,46 @@
-# Protocolo de Desarrollo Seguro (Git + Vercel)
+# Protocolo de Desarrollo Seguro Asiste360 (Git + Vercel)
 
-Este documento define cómo trabajaremos en nuevas mejoras para **Asiste360** sin poner en riesgo la versión que ya funciona (MVP).
+Este documento define el estándar de despliegue para **Asiste360** para garantizar que la versión de producción (`master`) sea siempre estable y funcional.
 
-## 1. El Flujo de Trabajo (Branching)
+## 1. Ramas y Entornos
 
-Nunca trabajaremos directamente en la rama `master` para funciones nuevas. Usaremos "Ramas de Desarrollo".
+| Rama | Entorno Vercel | Propósito | URL |
+| :--- | :--- | :--- | :--- |
+| **master** | **Production** | Versión oficial para clientes. | [inasiste360.vercel.app](https://inasiste360.vercel.app) |
+| **desarrollo** | **Preview** | Pruebas, nuevas funciones y correcciones. | Generada por Vercel (ver Panel) |
 
-| Rama | Propósito | Estado en Vercel |
-| :--- | :--- | :--- |
-| **master** | Versión de Producción (MVP). Solo código estable. | [inasiste360.vercel.app](https://inasiste360.vercel.app) |
-| **desarrollo** | Nuevas funciones y pruebas. | URL de Previsualización (Vercel la genera sola) |
+## 2. El Ciclo de Vida del Cambio (Paso a Paso)
 
-## 2. Pasos para una Mejora Nueva
+### Paso 1: Desarrollo Local
+*   Se realizan los cambios en la rama `desarrollo`.
+*   Se prueban localmente con `npm run dev`.
 
-1. **Crear Rama:** Antes de tocar el código, crearé una rama como `feat-mejoras-ui` o `fix-error-login`.
-2. **Desarrollar:** Haré los cambios solo en esa rama.
-3. **Validar en Vercel (Preview):** Vercel detectará la rama y te dará una URL temporal para que pruebes los cambios **sin que afecte a la página principal**.
-4. **Merge (Fusión):** Si todo está perfecto, "fusionaremos" esa rama con `master` para que suba a producción.
+### Paso 2: Despliegue a Desarrollo (Preview)
+*   Se sube el código: `git push origin desarrollo`.
+*   **Vercel** detecta el cambio y genera un **Preview Deployment**.
+*   **Acción del Usuario/Agente**: Abrir el link de Preview desde el Panel de Vercel.
 
-## 3. Prevención de Errores y Rollbacks
+### Paso 3: Validación Obligatoria (QA)
+Antes de pasar a producción, se debe verificar en el link de **Preview**:
+- [ ] **Login**: ¿Entra correctamente?
+- [ ] **Marcación**: ¿Registra entradas/salidas con foto?
+- [ ] **Auditoría**: ¿Se ven las fotos de referencia y evidencia?
+- [ ] **Dashboard**: ¿Los cálculos (horas, costos) son coherentes?
 
-### A. Si un cambio en `master` rompe algo:
-Vercel guarda un historial. Podemos volver a una versión anterior con un solo clic:
-1. Ve a **Deployments**.
-2. Busca la versión que funcionaba (hace 10 min, ayer, etc.).
-3. Haz clic en los tres puntos y elige **Promote to Production**. Esto restaurará la versión anterior en segundos.
+### Paso 4: Paso a Producción (Merge)
+Solo cuando el Paso 3 sea exitoso:
+1. Sincronizar local: `git checkout master` + `git merge desarrollo`.
+2. Subir a Producción: `git push origin master`.
+3. Vercel desplegará automáticamente la nueva versión oficial.
 
-### C. Seguridad de Base de Datos (RLS):
-Cada vez que una operación falle con un error de "Row Level Security (RLS)", debemos:
-1. Revisar si la tabla tiene políticas de `INSERT`, `UPDATE` o `DELETE` activas.
-2. Aplicar la política correspondiente en Supabase antes de subir el cambio al frontend.
+## 3. Control y Rescate (Panel de Vercel)
 
-## 4. Próximos Pasos (Propuesta)
-- [ ] Configurar rama de `desarrollo`.
-- [ ] Implementar sistema de logs más robusto para capturar errores en vivo.
-- [ ] Empezar con la primera mejora solicitada usando este flujo.
+Si algo falla en producción a pesar de las pruebas:
+1. **Instant Rollback**: En el panel de Vercel, ve a `Deployments`, busca la versión anterior que funcionaba y selecciona **"Promote to Production"**. Esto restaura el sitio en segundos sin necesidad de git.
+2. **Logs en Vivo**: Usa la pestaña `Logs` de Vercel para identificar errores 500 o fallos de API en tiempo real.
+
+## 4. Gestión de Memoria (SOP)
+Cada vez que se aprenda una restricción nueva (ej. "Vercel falla si la imagen pesa > 4MB"), se debe actualizar este SOP en la sección **Casos Borde**.
+
+---
+*Última actualización: Marzo 2026*
