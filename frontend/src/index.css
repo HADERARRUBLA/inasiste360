@@ -1,39 +1,49 @@
 @import "tailwindcss";
 
+/* 🏢 Estilos Globales Estándar (Light para InAsiste360 funcional) */
 @theme {
-  --color-background: #0b1326;
-  --color-surface: #0b1326;
-  --color-surface-container: #171f33;
-  --color-surface-container-low: #131b2e;
-  --color-surface-container-high: #222a3d;
-  --color-surface-container-highest: #2d3449;
-  --color-primary: #b1c5ff;
-  --color-primary-container: #0047ab;
-  --color-on-primary-container: #a5bdff;
-  --color-on-surface: #dae2fd;
-  --color-on-surface-variant: #c3c6d5;
-  --color-outline-variant: #434653;
+  --color-background: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-container: #ffffff;
+  --color-primary: #0047ab;
+  --color-on-surface: #1e293b;
+  --color-on-surface-variant: #64748b;
+  --color-outline-variant: #e2e8f0;
   
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* 🏔️ TOKENS EXCLUSIVOS PARA LA LANDING (Sin solapamiento) */
+  --color-exec-bg: #0b1326;
+  --color-exec-surface: #171f33;
+  --color-exec-low: #131b2e;
+  --color-exec-high: #222a3d;
+  --color-exec-highest: #2d3449;
+  --color-exec-primary: #b1c5ff;
+  --color-exec-on-primary: #a5bdff;
+  --color-exec-on-surface: #dae2fd;
+  --color-exec-on-variant: #c3c6d5;
+  --color-exec-outline: #434653;
 }
 
 @layer base {
   body {
-    @apply bg-background text-on-surface font-sans selection:bg-primary/30;
+    @apply bg-background text-on-surface font-sans selection:bg-primary/10;
+    background-color: #ffffff; /* Fuerza blanco real */
   }
 }
 
 @layer utilities {
-  .point-cloud-overlay {
+  .exec-point-cloud {
     background-image: radial-gradient(circle, rgba(177, 197, 255, 0.05) 1px, transparent 1px);
     background-size: 24px 24px;
   }
   
-  .glass-panel {
-    @apply backdrop-blur-xl bg-surface-container-high/60 border border-white/10;
+  .exec-glass-panel {
+    @apply backdrop-blur-xl border border-white/10;
+    background-color: rgba(34, 42, 61, 0.6);
   }
   
-  .metallic-edge {
+  .exec-metallic-edge {
     box-shadow: inset 0 0.5px 0 0 rgba(255, 255, 255, 0.2);
   }
 }
