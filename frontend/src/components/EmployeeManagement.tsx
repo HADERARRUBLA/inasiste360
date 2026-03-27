@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Profile } from '../types';
-import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2 } from 'lucide-react';
+import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDown, Search } from 'lucide-react';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
+import * as XLSX from 'xlsx';
 
 interface EmployeeManagementProps {
     companyId: string | null;
@@ -38,6 +39,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
     const [isModelLoaded, setIsModelLoaded] = useState(false);
     const [faceCaptures, setFaceCaptures] = useState<number[][]>([]);
     const webcamRef = useRef<Webcam>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Form state
     const [formData, setFormData] = useState({
@@ -119,6 +122,12 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             setLoading(false);
         }
     };
+
+    const filteredProfiles = profiles.filter(p => 
+        p.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.national_id?.includes(searchTerm) ||
+        p.phone_number?.includes(searchTerm)
+    );
 
     const handleEdit = (profile: Profile) => {
         setFormData({
@@ -244,23 +253,135 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         }
     };
 
+    const handleExportExcel = () => {
+        const dataToExport = profiles.map(p => ({
+            'Nombre Completo': p.full_name,
+            'Identificacion': p.national_id,
+            'PIN de Acceso': p.pin_code,
+            'Telefono': p.phone_number,
+            'Tarifa Base': p.hourly_rate_base,
+            'Extra Diurna': p.hourly_rate_extra_day || 0,
+            'Extra Nocturna': p.hourly_rate_extra_night || 0,
+            'Dominical': p.hourly_rate_sunday_holiday || 0,
+            'Extra Dom Diurna': p.hourly_rate_sunday_holiday_extra_day || 0,
+            'Extra Dom Nocturna': p.hourly_rate_sunday_holiday_extra_night || 0
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Empleados');
+        XLSX.writeFile(wb, `Empleados_Asiste360_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !companyId || !formData.organization_id) {
+            alert('Por favor asegúrate de tener una sede activa y seleccionar un archivo válido.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+                if (data.length === 0) {
+                    alert('El archivo está vacío.');
+                    return;
+                }
+
+                // Map and Validate
+                const profilesToImport = data.map(item => ({
+                    full_name: item['Nombre Completo'] || item['Nombre'] || item['full_name'],
+                    national_id: String(item['Identificacion'] || item['ID'] || item['national_id']),
+                    pin_code: String(item['PIN de Acceso'] || item['PIN'] || item['pin_code']),
+                    phone_number: String(item['Telefono'] || item['phone_number'] || ''),
+                    hourly_rate_base: parseFloat(item['Tarifa Base'] || item['hourly_rate_base'] || 0),
+                    hourly_rate_extra_day: parseFloat(item['Extra Diurna'] || item['hourly_rate_extra_day'] || 0),
+                    hourly_rate_extra_night: parseFloat(item['Extra Nocturna'] || item['hourly_rate_extra_night'] || 0),
+                    hourly_rate_sunday_holiday: parseFloat(item['Dominical'] || item['hourly_rate_sunday_holiday'] || 0),
+                    hourly_rate_sunday_holiday_extra_day: parseFloat(item['Extra Dom Diurna'] || item['hourly_rate_sunday_holiday_extra_day'] || 0),
+                    hourly_rate_sunday_holiday_extra_night: parseFloat(item['Extra Dom Nocturna'] || item['hourly_rate_sunday_holiday_extra_night'] || 0),
+                    company_id: companyId,
+                    organization_id: formData.organization_id,
+                    role: 'employee',
+                    is_active: true
+                }));
+
+                // Basic validation for required fields
+                const invalid = profilesToImport.find(p => !p.full_name || !p.national_id || !p.pin_code);
+                if (invalid) {
+                    alert('Hay registros incompletos (Nombre, ID o PIN faltantes). Por favor verifica el Excel.');
+                    return;
+                }
+
+                if (confirm(`¿Deseas importar ${profilesToImport.length} colaboradores? Los IDs existentes se actualizarán.`)) {
+                    setLoading(true);
+                    const { error } = await supabase
+                        .from('InA_profiles')
+                        .upsert(profilesToImport, { onConflict: 'national_id' });
+
+                    if (error) throw error;
+                    
+                    alert('Importación completada con éxito.');
+                    fetchProfiles();
+                }
+            } catch (err: any) {
+                console.error('Error importing:', err);
+                alert('Error al procesar el Excel: ' + err.message);
+            } finally {
+                setLoading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-black text-foreground uppercase tracking-tight italic">Directorio de Colaboradores</h2>
-                <button
-                    onClick={() => {
-                        setIsAdding(!isAdding);
-                        setEditingId(null);
-                        setFaceCaptures([]);
-                        setIsCameraActive(false);
-                    }}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
-                >
-                    {isAdding ? <X className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-                    {isAdding ? 'Cancelar' : 'Agregar Colaborador'}
-                </button>
+                <div className="flex items-center gap-4">
+                    <SearchInput value={searchTerm} onChange={setSearchTerm} />
+                    <div className="flex items-center gap-2">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImportExcel}
+                        accept=".xlsx, .xls"
+                        className="hidden"
+                    />
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-green-50 text-green-700 border border-green-100 rounded-xl font-bold hover:bg-green-100 transition-all active:scale-95"
+                    >
+                        <FileUp className="w-4 h-4" /> Importar Excel
+                    </button>
+                    <button
+                        onClick={handleExportExcel}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl font-bold hover:bg-blue-100 transition-all active:scale-95"
+                    >
+                        <FileDown className="w-4 h-4" /> Exportar Lista
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsAdding(!isAdding);
+                            setEditingId(null);
+                            setFaceCaptures([]);
+                            setIsCameraActive(false);
+                        }}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
+                    >
+                        {isAdding ? <X className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                        {isAdding ? 'Cancelar' : 'Agregar Colaborador'}
+                    </button>
+                </div>
             </div>
+        </div>
 
             {isAdding && (
                 <div className="bg-card border rounded-[2rem] p-8 shadow-xl animate-in fade-in slide-in-from-top-6 duration-500 relative overflow-hidden">
@@ -548,9 +669,11 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                     <p className="font-black text-xs uppercase tracking-widest text-muted-foreground">Sincronizando Base de Datos...</p>
                                 </div>
                             </td></tr>
-                        ) : profiles.length === 0 ? (
-                            <tr><td colSpan={5} className="px-8 py-20 text-center text-muted-foreground font-black uppercase text-xs tracking-widest opacity-20 italic">Zona vacía: No hay colaboradores registrados.</td></tr>
-                        ) : profiles.map(profile => (
+                        ) : filteredProfiles.length === 0 ? (
+                            <tr><td colSpan={5} className="px-8 py-20 text-center text-muted-foreground font-black uppercase text-xs tracking-widest opacity-20 italic">
+                                {searchTerm ? `No se encontró: "${searchTerm}"` : 'Zona vacía: No hay colaboradores registrados.'}
+                            </td></tr>
+                        ) : filteredProfiles.map(profile => (
                             <tr key={profile.id} className="hover:bg-primary/5 transition-colors group">
                                 <td className="px-8 py-6">
                                     <div className="flex items-center gap-4">
@@ -606,3 +729,18 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         </div>
     );
 };
+
+const SearchInput = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => (
+    <div className="relative group">
+        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Search className="w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+        </div>
+        <input
+            type="text"
+            className="block w-64 pl-11 pr-4 py-2.5 bg-muted/30 border border-transparent focus:bg-background focus:border-primary/20 focus:ring-4 focus:ring-primary/10 rounded-xl text-xs font-bold transition-all placeholder:font-black placeholder:uppercase placeholder:tracking-widest"
+            placeholder="Buscar por nombre, ID..."
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+        />
+    </div>
+);
