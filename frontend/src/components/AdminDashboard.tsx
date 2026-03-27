@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import type { TimeEntry } from '../types';
+import * as XLSX from 'xlsx';
 import {
     FileDown, Search, Users, Clock,
-    CheckCircle, TrendingUp,
+    CheckCircle, TrendingUp, AlertTriangle,
     MoreHorizontal, ArrowUpRight, ArrowDownRight, Trash2
 } from 'lucide-react';
 import {
@@ -113,102 +114,129 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             else if (e.event_type === 'in') activeNow.add(e.profile_id);
         });
 
-        // 3. Punctuality & Late Alerts
-        let latesToday = 0;
+        // 3. Punctuality & Late Alerts (Entire Period)
+        let totalLatesPeriod = 0;
         const alertEntries: any[] = [];
+        const userSummaries: Record<string, any> = {};
 
-        const firstInsToday = entriesToday
-            .filter(e => e.event_type === 'in' && !e.metadata?.is_return)
-            .reduce((acc: any, curr) => {
-                if (!acc[curr.profile_id] || new Date(curr.created_at!) < new Date(acc[curr.profile_id].created_at!)) {
-                    acc[curr.profile_id] = curr;
-                }
-                return acc;
-            }, {});
-
+        // Initialize user summaries
         profiles.forEach(p => {
-            const dayCode = dayMap[now.getDay()];
-            const profileSched = p.use_custom_schedule ? (p.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
-
-            if (profileSched?.active) {
-                const firstIn = firstInsToday[p.id];
-                if (firstIn) {
-                    const inTime = new Date(firstIn.created_at!);
-                    const [schedH, schedM] = profileSched.start.split(':').map(Number);
-                    const schedTime = new Date(inTime);
-                    schedTime.setHours(schedH, schedM, 0, 0);
-
-                    if (inTime > schedTime) {
-                        latesToday++;
-                        const diffMin = Math.round((inTime.getTime() - schedTime.getTime()) / 60000);
-                        alertEntries.push({
-                            name: p.full_name,
-                            type: 'Llegada Tarde',
-                            desc: `${diffMin} min tarde`,
-                            time: inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            severity: 'error'
-                        });
-                    }
-                } else {
-                    // Check if they are ALREADY late (should have arrived by now)
-                    const [schedH, schedM] = profileSched.start.split(':').map(Number);
-                    const deadline = new Date(now);
-                    deadline.setHours(schedH, schedM, 0, 0);
-
-                    if (now > deadline && !activeNow.has(p.id)) {
-                        alertEntries.push({
-                            name: p.full_name,
-                            type: 'Inasistencia / Retraso',
-                            desc: `Debió entrar a las ${profileSched.start}`,
-                            time: '--:--',
-                            severity: 'warning'
-                        });
-                    }
-                }
-            }
+            userSummaries[p.id] = {
+                name: p.full_name,
+                national_id: p.national_id,
+                minutesWork: 0,
+                breakfast: 0,
+                lunch: 0,
+                activePause: 0,
+                others: 0,
+                lates: 0,
+                extraDay: 0,
+                extraNight: 0,
+                extraSunday: 0,
+                totalCost: 0
+            };
         });
 
-        // 4. Payroll Calculation (Estimated)
-        let estimatedCost = 0;
-        let totalMinutesWork = 0;
-        const breakdownMins: Record<string, number> = { trabajo: 0, breakfast: 0, lunch: 0, active_pause: 0 };
-
-        const perUserAndDate = filteredForStats.reduce((acc: any, curr) => {
+        // Group all entries by user and date for period analysis
+        const perUserAndDateAll = entries.reduce((acc: any, curr) => {
             const date = curr.date || curr.created_at?.split('T')[0];
+            if (!date || date < dateRange.start || date > dateRange.end) return acc;
             const key = `${curr.profile_id}_${date}`;
             if (!acc[key]) acc[key] = [];
             acc[key].push(curr);
             return acc;
         }, {});
 
-        Object.values(perUserAndDate).forEach((dayEntries: any) => {
+        Object.keys(perUserAndDateAll).forEach(key => {
+            const [profileId, dateStr] = key.split('_');
+            const dayEntries = perUserAndDateAll[key];
+            const profile = profiles.find(p => p.id === profileId);
+            if (!profile) return;
+
+            const dateObj = new Date(dateStr + 'T12:00:00');
+            const dayCode = dayMap[dateObj.getDay()];
+            const profileSched = profile.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+
+            if (profileSched?.active) {
+                // Find first IN (not return) of that day
+                const firstIn = dayEntries
+                    .filter((e: any) => e.event_type === 'in' && !e.metadata?.is_return)
+                    .sort((a: any, b: any) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime())[0];
+
+                if (firstIn) {
+                    const inTime = new Date(firstIn.clock_in || firstIn.created_at!);
+                    const [schedH, schedM] = profileSched.start.split(':').map(Number);
+                    const schedTime = new Date(inTime);
+                    schedTime.setHours(schedH, schedM, 0, 0);
+
+                    if (inTime > schedTime) {
+                        totalLatesPeriod++;
+                        userSummaries[profileId].lates++;
+                        const diffMin = Math.round((inTime.getTime() - schedTime.getTime()) / 60000);
+                        if (dateStr === todayStr) {
+                            alertEntries.push({
+                                name: profile.full_name,
+                                type: 'Llegada Tarde',
+                                desc: `${diffMin} min tarde (${dateStr})`,
+                                time: inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                severity: 'error'
+                            });
+                        }
+                    }
+                }
+            }
+        });
+
+        // 4. Payroll & Breakdown Calculation
+        let estimatedCost = 0;
+        let totalMinutesWork = 0;
+        const globalBreakdown: Record<string, number> = { trabajo: 0, breakfast: 0, lunch: 0, active_pause: 0 };
+
+        Object.values(perUserAndDateAll).forEach((dayEntries: any) => {
             const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-            const profile = profiles.find(p => p.id === dayEntries[0].profile_id);
+            const profileId = dayEntries[0].profile_id;
+            const profile = profiles.find(p => p.id === profileId);
             if (!profile) return;
 
             const dateStr = dayEntries[0].date || dayEntries[0].created_at?.split('T')[0];
-            const dateObj = new Date(dateStr + 'T12:00:00'); // Mid-day to avoid TZ shifts
+            const dateObj = new Date(dateStr + 'T12:00:00');
             const dayCode = dayMap[dateObj.getDay()];
             const profileSched = profile.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
 
             for (let i = 0; i < sorted.length; i++) {
-                const start = new Date(sorted[i].created_at!);
-                const next = sorted[i + 1];
-                const isToday = (sorted[i].date || sorted[i].created_at?.split('T')[0]) === todayStr;
-                const end = next ? new Date(next.created_at!) : (isToday ? new Date() : start);
-                const diffMin = (end.getTime() - start.getTime()) / 60000;
+                const entry = sorted[i];
+                const start = new Date(entry.clock_in || entry.created_at!);
+                let end = start; 
+                let diffMin = 0;
 
-                if (sorted[i].event_type !== 'in') {
-                    if (breakdownMins[sorted[i].event_type] !== undefined) {
-                        breakdownMins[sorted[i].event_type] += diffMin;
+                if (entry.total_hours) {
+                    diffMin = entry.total_hours * 60;
+                    end = new Date(start.getTime() + diffMin * 60000);
+                } else {
+                    const next = sorted[i + 1];
+                    const isEntryToday = (entry.date || entry.created_at?.split('T')[0]) === todayStr;
+                    end = entry.clock_out 
+                        ? new Date(entry.clock_out) 
+                        : (next ? new Date(next.clock_in || next.created_at!) : (isEntryToday ? new Date() : start));
+                    diffMin = Math.max(0, (end.getTime() - start.getTime()) / 60000);
+                }
+
+                if (entry.event_type !== 'in' && entry.event_type !== 'out') {
+                    if (globalBreakdown[entry.event_type] !== undefined) {
+                        globalBreakdown[entry.event_type] += diffMin;
                     }
+                    if (entry.event_type === 'breakfast') userSummaries[profileId].breakfast += diffMin;
+                    else if (entry.event_type === 'lunch') userSummaries[profileId].lunch += diffMin;
+                    else if (entry.event_type === 'active_pause') userSummaries[profileId].activePause += diffMin;
+                    else userSummaries[profileId].others += diffMin;
                     continue;
                 }
 
-                breakdownMins.trabajo += diffMin;
+                userSummaries[profileId].minutesWork += diffMin;
+                globalBreakdown.trabajo += diffMin;
                 totalMinutesWork += diffMin;
 
-                // --- Calculate Smart Cost ---
+                // --- Calculate Smart Cost & Extras ---
                 const isSunday = dateObj.getDay() === 0;
                 const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
                 const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
@@ -227,10 +255,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 const extraNightMin = getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
 
                 const baseRate = isSunday ? (profile.hourly_rate_sunday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
+                
+                const cost = (baseMin * baseRate / 60) + 
+                             (extraDayMin * (profile.hourly_rate_extra_day || baseRate || 0) / 60) + 
+                             (extraNightMin * (profile.hourly_rate_night || baseRate || 0) / 60);
 
-                estimatedCost += (baseMin * baseRate / 60);
-                estimatedCost += (extraDayMin * (profile.hourly_rate_extra_day || baseRate || 0) / 60);
-                estimatedCost += (extraNightMin * (profile.hourly_rate_night || baseRate || 0) / 60);
+                estimatedCost += cost;
+                userSummaries[profileId].totalCost += cost;
+
+                if (isSunday) {
+                    userSummaries[profileId].extraSunday += diffMin;
+                } else {
+                    userSummaries[profileId].extraDay += extraDayMin;
+                    userSummaries[profileId].extraNight += extraNightMin;
+                }
+            }
+        });
+
+        // Add Multi-hour Overtime alerts
+        Object.values(userSummaries).forEach((sum: any) => {
+            const totalExtraMins = sum.extraDay + sum.extraNight + sum.extraSunday;
+            if (totalExtraMins > 600) { // More than 10 hours of extra work in period
+                alertEntries.push({
+                    name: sum.name,
+                    type: 'Alerta Horas Extras',
+                    desc: `${Math.round(totalExtraMins / 60)}h extras en el periodo`,
+                    time: '--:--',
+                    severity: 'warning'
+                });
             }
         });
 
@@ -238,12 +290,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             totalEmployees: profiles.length,
             activeToday: activeNow.size,
             onBreakToday: onBreakNow.size,
-            latesToday,
+            latesToday: totalLatesPeriod,
             estimatedCost: Math.round(estimatedCost),
             totalHoursPeriod: Math.floor(totalMinutesWork / 60),
             totalMinutesPeriod: totalMinutesWork,
-            breakdown: breakdownMins,
-            alerts: alertEntries // All alerts for reporting
+            breakdown: globalBreakdown,
+            alerts: alertEntries,
+            userSummaries
         };
     }, [entries, profiles, company, dateRange, selectedProfileId]);
 
@@ -356,8 +409,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         document.body.removeChild(link);
     };
 
-    const exportToCSV = () => {
-        // 1. Raw Logs Session
+    const exportToExcel = () => {
+        // 1. Logs Sheet
         const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo'];
         const logRows = filteredEntries.map(e => [
             e.date || e.created_at?.split('T')[0],
@@ -368,100 +421,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             e.metadata?.method || 'N/A'
         ]);
 
-        const totalsByEmployee = filteredEntries.reduce((acc: any, curr) => {
-            if (!curr.profile_id) return acc;
-            const date = curr.date || curr.created_at?.split('T')[0];
-            if (!date) return acc;
+        // 2. Summary Sheet
+        const summaryHeaders = ['Colaborador', 'ID', 'Min. Trabajo', 'Desayuno (min)', 'Almuerzo (min)', 'P. Activa (min)', 'Otros/Pausas (min)', 'HE Diurna', 'HE Nocturna', 'Extra Dominical', 'Tardanzas (veces)', 'Coste Proyectado'];
+        const summaryRows = Object.values(stats.userSummaries).map((s: any) => [
+            s.name, s.national_id, Math.round(s.minutesWork), Math.round(s.breakfast), Math.round(s.lunch), Math.round(s.activePause), Math.round(s.others),
+            Math.round(s.extraDay), Math.round(s.extraNight), Math.round(s.extraSunday), s.lates, Math.round(s.totalCost)
+        ]);
 
-            const profile = profiles.find(p => p.id === curr.profile_id);
-            if (!acc[curr.profile_id]) {
-                acc[curr.profile_id] = {
-                    name: profile?.full_name || 'N/A',
-                    id: profile?.national_id || 'N/A',
-                    rates: `Base: ${profile?.hourly_rate_base} | ExtraD: ${profile?.hourly_rate_extra_day} | Noct: ${profile?.hourly_rate_night} | Dom: ${profile?.hourly_rate_sunday}`,
-                    days: {}
-                };
-            }
-            if (!acc[curr.profile_id].days[date]) acc[curr.profile_id].days[date] = [];
-            acc[curr.profile_id].days[date].push(curr);
-            return acc;
-        }, {});
-
-        const summaryRows: any[] = [];
-        Object.values(totalsByEmployee).forEach((emp: any) => {
-            let totalOrd = 0, totalExtD = 0, totalExtN = 0, totalMin = 0;
-
-            Object.keys(emp.days).forEach(dateStr => {
-                const dayEntries = emp.days[dateStr];
-                const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-                const profile = profiles.find(p => p.national_id === emp.id);
-                const dateObj = new Date(dateStr + 'T12:00:00');
-                const dayCode = dayMap[dateObj.getDay()];
-                const profileSched = profile?.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
-
-                sorted.forEach((e: any, idx: number) => {
-                    if (e.event_type !== 'in') return;
-                    const start = new Date(e.created_at!);
-                    const next = sorted[idx + 1];
-                    const end = next ? new Date(next.created_at!) : (dateStr === new Date().toLocaleDateString('en-CA') ? new Date() : start);
-                    const diff = (end.getTime() - start.getTime()) / 60000;
-                    totalMin += diff;
-
-                    const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
-                    const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
-                    const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
-                    const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
-
-                    const getOverlap = (t1: Date, t2: Date) => {
-                        const os = new Date(Math.max(start.getTime(), t1.getTime()));
-                        const oe = new Date(Math.min(end.getTime(), t2.getTime()));
-                        return Math.max(0, (oe.getTime() - os.getTime()) / 60000);
-                    };
-
-                    totalOrd += getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
-                    totalExtD += getOverlap(schedThreshold, nightThreshold);
-                    totalExtN += getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
-                });
-            });
-
-            summaryRows.push([
-                emp.name, emp.id,
-                Math.round(totalOrd), Math.round(totalExtD), Math.round(totalExtN),
-                Math.round(totalMin), emp.rates
-            ]);
-        });
-
-        // 3. Alerts Session
+        // 3. Alerts Sheet
         const alertHeaders = ['Colaborador', 'Tipo Alerta', 'Fecha/Hora', 'Descripcion'];
         const alertRows = stats.alerts.map((a: any) => [a.name, a.type, a.time, a.desc]);
 
-        const csvContent = [
-            ['REPORTES ASISTE360'],
-            [`Periodo: ${dateRange.start} al ${dateRange.end}`],
-            [],
-            ['--- 1. REGISTROS DETALLADOS ---'],
-            logHeaders,
-            ...logRows,
-            [],
-            ['--- 2. RESUMEN DE NOMINA Y HORAS ---'],
-            ['Colaborador', 'ID', 'Min. Ordinarios', 'Min. Extra Dia', 'Min. Extra Noche', 'Total Minutos', 'Condiciones'],
-            ...summaryRows,
-            [],
-            ['--- 3. NOVEDADES Y ALERTAS ---'],
-            alertHeaders,
-            ...alertRows
-        ].map(r => r.map((cell: any) => `"${cell}"`).join(',')).join('\n');
+        const wb = XLSX.utils.book_new();
+        
+        const ws_summary = XLSX.utils.aoa_to_sheet([['RESUMEN DE ASISTENCIA Y NOMINA'], [`Periodo: ${dateRange.start} a ${dateRange.end}`], [], summaryHeaders, ...summaryRows]);
+        XLSX.utils.book_append_sheet(wb, ws_summary, "Resumen General");
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `asiste360_reporte_hr_${dateRange.start}_a_${dateRange.end}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const ws_logs = XLSX.utils.aoa_to_sheet([['LOGS DETALLADOS'], [], logHeaders, ...logRows]);
+        XLSX.utils.book_append_sheet(wb, ws_logs, "Logs de Eventos");
+
+        const ws_alerts = XLSX.utils.aoa_to_sheet([['ALERTAS Y NOVEDADES'], [], alertHeaders, ...alertRows]);
+        XLSX.utils.book_append_sheet(wb, ws_alerts, "Novedades");
+
+        XLSX.writeFile(wb, `asiste360_reporte_completo_${dateRange.start}_a_${dateRange.end}.xlsx`);
     };
+
+    const exportToCSV = exportToExcel; // Alias for compatibility
 
     const handleClearRecords = async () => {
         if (!companyId) return;
@@ -718,7 +703,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                             <button onClick={exportToICG} className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95 mr-2">
                                 <FileDown className="w-4 h-4" /> EXPORTAR ICG
                             </button>
-                            <button onClick={exportToCSV} className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-green-700 transition-all active:scale-95">
+                            <button onClick={exportToExcel} className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-green-700 transition-all active:scale-95">
                                 <FileDown className="w-4 h-4" /> DESCARGAR EXCEL COMPLETO
                             </button>
                         </div>
@@ -758,36 +743,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                                 <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
                                     <tr>
                                         <th className="px-8 py-5">Colaborador</th>
-                                        <th className="px-8 py-5 text-center">Min. Ord</th>
-                                        <th className="px-8 py-5 text-center">Min. ExtD</th>
-                                        <th className="px-8 py-5 text-center">Min. ExtN</th>
+                                        <th className="px-8 py-5 text-center">Tardanzas</th>
+                                        <th className="px-8 py-5 text-center">Pausas (min)</th>
+                                        <th className="px-8 py-5 text-center">Extras (min)</th>
                                         <th className="px-8 py-5 text-center">Total Horas</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y text-xs font-bold">
                                     {profiles.map(p => {
-                                        const empEntries = entries.filter(e => e.profile_id === p.id && e.created_at && (e.date || e.created_at.split('T')[0]) >= dateRange.start && (e.date || e.created_at.split('T')[0]) <= dateRange.end);
-                                        let mTotal = 0;
-
-                                        const sorted = [...empEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-                                        sorted.forEach((e, idx) => {
-                                            if (e.event_type !== 'in' || !e.created_at) return;
-                                            const next = sorted[idx + 1];
-                                            const start = new Date(e.created_at);
-                                            const end = next?.created_at ? new Date(next.created_at) : (e.created_at?.startsWith(new Date().toLocaleDateString('en-CA')) ? new Date() : start);
-                                            mTotal += (end.getTime() - start.getTime()) / 60000;
-                                        });
-
+                                        const summary = stats.userSummaries[p.id] || { minutesWork: 0, lates: 0, breakfast: 0, lunch: 0, activePause: 0, extraDay: 0, extraNight: 0, extraSunday: 0 };
+                                        const totalExtras = summary.extraDay + summary.extraNight + summary.extraSunday;
+                                        const totalPauses = summary.breakfast + summary.lunch + summary.activePause;
+                                        
                                         return (
                                             <tr key={p.id} className="hover:bg-muted/30 transition-all">
                                                 <td className="px-8 py-5">
                                                     <p className="font-black text-sm">{p.full_name}</p>
                                                     <p className="text-[9px] text-muted-foreground uppercase">{p.national_id}</p>
                                                 </td>
-                                                <td className="px-8 py-5 text-center text-slate-500 italic">Ver en Excel</td>
-                                                <td className="px-8 py-5 text-center text-slate-500 italic">Ver en Excel</td>
-                                                <td className="px-8 py-5 text-center text-slate-500 italic">Ver en Excel</td>
-                                                <td className="px-8 py-5 text-center text-primary text-sm font-black">{Math.floor(mTotal / 60)}h {Math.round(mTotal % 60)}m</td>
+                                                <td className="px-8 py-5 text-center">
+                                                    <span className={`px-2 py-0.5 rounded-full ${summary.lates > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                                        {summary.lates}
+                                                    </span>
+                                                </td>
+                                                <td className="px-8 py-5 text-center text-slate-600">
+                                                    {Math.round(totalPauses)}m
+                                                    <div className="text-[8px] text-muted-foreground uppercase mt-0.5">
+                                                        D:{Math.round(summary.breakfast)} | A:{Math.round(summary.lunch)} | P:{Math.round(summary.activePause)}
+                                                    </div>
+                                                </td>
+                                                <td className="px-8 py-5 text-center text-orange-600">
+                                                    {Math.round(totalExtras)}m
+                                                    <div className="text-[8px] text-muted-foreground uppercase mt-0.5">
+                                                        D:{Math.round(summary.extraDay)} | N:{Math.round(summary.extraNight)} | S:{Math.round(summary.extraSunday)}
+                                                    </div>
+                                                </td>
+                                                <td className="px-8 py-5 text-center text-primary text-sm font-black">
+                                                    {Math.floor(summary.minutesWork / 60)}h {Math.round(summary.minutesWork % 60)}m
+                                                </td>
                                             </tr>
                                         );
                                     })}
