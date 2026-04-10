@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase';
 import { useGeofencing } from '../hooks/useGeofencing';
 import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2, Timer } from 'lucide-react';
 import Webcam from 'react-webcam';
-import { EventType } from '../types';
+import * as faceapi from 'face-api.js';
+import { EventType, TimeEntryMetadata } from '../types';
+import { compareFaceVectors } from '../utils/biometricUtils';
 
 interface KioskModeProps {
     companyId: string;
@@ -12,6 +14,7 @@ interface KioskModeProps {
     onSuccess: (userId: string, type: 'in' | 'out') => void;
     onBack?: () => void;
     companyName?: string;
+    biometricEnabled?: boolean;
 }
 
 interface KioskUser {
@@ -28,7 +31,7 @@ interface LastEntry {
   created_at: string;
 }
 
-export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, onSuccess, onBack }) => {
+export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, biometricEnabled = false, onSuccess, onBack }) => {
     const { isLoading, isInside, distance, currentLocation, accuracy, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
     const [pin, setPin] = useState('');
     const [step, setStep] = useState<'pin' | 'action' | 'face'>('pin');
@@ -38,11 +41,31 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     const [selectedType, setSelectedType] = useState<EventType | null>(null);
     const [status, setStatus] = useState<{ type: 'success' | 'error' | 'loading', msg: string } | null>(null);
     const [countdown, setCountdown] = useState<number | null>(null);
+    const [isModelLoaded, setIsModelLoaded] = useState(false);
     
     const webcamRef = useRef<Webcam>(null);
     const inactivityTimerRef = useRef<number | null>(null);
     const countdownRef = useRef<number | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+
+    React.useEffect(() => {
+        const initKiosk = async () => {
+            if (biometricEnabled) {
+                try {
+                    const MODEL_URL = '/models';
+                    await Promise.all([
+                        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                    ]);
+                    setIsModelLoaded(true);
+                } catch (err) {
+                    console.error('Error loading face-api models:', err);
+                }
+            }
+        };
+        initKiosk();
+    }, [biometricEnabled]);
 
     const startInactivityTimer = () => {
         cancelInactivityTimer();
@@ -126,11 +149,10 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setSelectedType(type);
         // Defer timer and heavy state changes to improve INP
         setTimeout(() => {
-            cancelInactivityTimer();
-            if (type === 'in' || type === 'out') {
+            if (biometricEnabled && isModelLoaded) {
                 setStep('face');
                 setIsCameraActive(true);
-                startInactivityTimer();
+                setTimeout(() => { cancelInactivityTimer(); startInactivityTimer(); }, 0);
             } else {
                 registerEntry(type, null);
             }
@@ -140,17 +162,51 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     const handleFaceVerify = async () => {
         if (!webcamRef.current) return;
         cancelInactivityTimer();
-        setStatus({ type: 'loading', msg: 'Capturando evidencia...' });
+        setStatus({ type: 'loading', msg: 'Analizando evidencia...' });
         const imageSrc = webcamRef.current.getScreenshot();
 
-        if (imageSrc) {
-            registerEntry(selectedType, imageSrc);
-        } else {
+        if (!imageSrc) {
             setStatus({ type: 'error', msg: 'No se pudo capturar la foto. Intenta de nuevo.' });
+            return;
         }
+
+        let isVerified = true;
+        let biometricMatch: boolean | null = null;
+        let biometricConfidence: number | null = null;
+        
+        console.log('[KIOSKO BIOMETRIA]', {
+            biometricEnabled,
+            isModelLoaded,
+            tieneVector: !!currentUser?.face_vector,
+            longitud: currentUser?.face_vector?.length
+        });
+
+        if (biometricEnabled && isModelLoaded && currentUser?.face_vector && currentUser.face_vector.length > 0) {
+            console.log("Kiosk: Biometrics active, checking vector for user:", currentUser.id);
+            const img = new Image();
+            img.src = imageSrc;
+            await new Promise(resolve => img.onload = resolve);
+            const detections = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+            
+            if (detections) {
+                const currentVector = Array.from(detections.descriptor);
+                const distance = euclideanDistance(currentVector, currentUser.face_vector);
+                biometricMatch = distance <= 0.55; 
+                biometricConfidence = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+                isVerified = biometricMatch;
+                console.log("Kiosk: Biometric result:", { biometricMatch, biometricConfidence });
+            } else {
+                biometricMatch = false;
+                biometricConfidence = 0;
+                isVerified = false;
+                console.log("Kiosk: No face detected in screenshot.");
+            }
+        }
+
+        registerEntry(selectedType!, imageSrc, isVerified, biometricMatch, biometricConfidence);
     };
 
-    const registerEntry = async (type: string, photoBase64?: string | null) => {
+    const registerEntry = async (type: string, photoBase64?: string | null, isVerified: boolean = true, biometricMatch: boolean | null = null, biometricConfidence: number | null = null) => {
         // Double check location just before saving if location tracking is active
         if (targetLocation !== null && isInside === false) {
             setStatus({ type: 'error', msg: 'Registro bloqueado: Estás fuera del área autorizada.' });
@@ -161,7 +217,6 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
         const now = new Date();
         const nowISO = now.toISOString();
-        // Generar fecha local YYYY-MM-DD sin desfase UTC
         const localDate = now.toLocaleDateString('en-CA');
 
         const isReturn = ['breakfast', 'lunch', 'active_pause', 'other'].includes(lastEntry?.event_type);
@@ -169,24 +224,29 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             ? `Regreso de ${getEventLabel(lastEntry.event_type)}`
             : getEventLabel(type);
 
+        // Build metadata carefully to ensure biometric fields are present
+        const metadata: TimeEntryMetadata = {
+            biometric_match: biometricMatch,
+            biometric_confidence: biometricConfidence,
+            method: photoBase64 ? 'photo-evidence' : 'pin-only',
+            event_label: eventLabel,
+            is_return: isReturn,
+            full_evidence: !!photoBase64,
+            photo_evidence: photoBase64 || null
+        };
+
         const insertData = {
             profile_id: currentUser.id,
             company_id: companyId,
             event_type: type,
-            date: localDate, // Usar fecha local
+            date: localDate,
             clock_in: nowISO,
             clock_out: type === 'out' ? nowISO : null,
-            is_verified: true,
+            is_verified: isVerified,
             location_snapshot: currentLocation
                 ? { lat: currentLocation.lat, lng: currentLocation.lng }
                 : null,
-            metadata: {
-                method: photoBase64 ? 'photo-evidence' : 'pin-only',
-                photo_evidence: photoBase64 || null, // Guardar evidencia completa
-                full_evidence: !!photoBase64,
-                event_label: eventLabel,
-                is_return: isReturn
-            }
+            metadata
         };
 
         const { error } = await supabase.from('InA_time_entries').insert([insertData]);
@@ -194,8 +254,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         if (error) {
             setStatus({ type: 'error', msg: 'Error: ' + error.message });
         } else {
-            const label = getEventLabel(type);
-            setStatus({ type: 'success', msg: `¡Hola ${currentUser.full_name}! ${label} registrado.` });
+            if (!isVerified) {
+                setStatus({ type: 'error', msg: 'Identidad no verificada. Marcación registrada con advertencia.' });
+            } else {
+                const label = getEventLabel(type);
+                setStatus({ type: 'success', msg: `¡Hola ${currentUser.full_name}! ${label} registrado.` });
+            }
             onSuccess(currentUser.id, type as any);
             setTimeout(() => resetKiosk(), 3000);
         }

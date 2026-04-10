@@ -142,12 +142,28 @@ function App() {
   };
 
   if (isKiosk) {
+    const settings = typeof currentCompany?.settings === 'string'
+      ? JSON.parse(currentCompany.settings)
+      : currentCompany?.settings ?? {};
+      
+    const biometricEnabled = settings?.features?.biometric_verification === true;
+
+    console.log('[BIOMETRIA DEBUG]', {
+      company: currentCompany?.name,
+      settings: settings,
+      settingsType: typeof currentCompany?.settings,
+      features: settings?.features,
+      biometric: settings?.features?.biometric_verification,
+      biometricEnabled: biometricEnabled
+    });
+
     return (
       <KioskMode
         companyId={selectedCompanyId || ''}
         companyName={currentCompany?.name}
         targetLocation={targetLocation}
         radiusMeters={currentCompany?.radius_limit || 100}
+        biometricEnabled={biometricEnabled}
         onSuccess={(uid, type) => { /* Registro exitoso */ }}
         onBack={() => setIsKiosk(false)}
       />
