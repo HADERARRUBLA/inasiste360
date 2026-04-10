@@ -1,8 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useGeofencing } from '../hooks/useGeofencing';
-import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2 } from 'lucide-react';
+import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2, Timer } from 'lucide-react';
 import Webcam from 'react-webcam';
+import * as faceapi from 'face-api.js';
+import type { EventType, TimeEntryMetadata } from '../types';
+import { compareFaceVectors, euclideanDistance } from '../utils/biometricUtils';
 
 interface KioskModeProps {
     companyId: string;
@@ -11,18 +14,100 @@ interface KioskModeProps {
     onSuccess: (userId: string, type: 'in' | 'out') => void;
     onBack?: () => void;
     companyName?: string;
+    biometricEnabled?: boolean;
 }
 
-export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, onSuccess, onBack }) => {
-    const { isInside, distance, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
+interface KioskUser {
+  id: string;
+  full_name: string;
+  pin_code: string;
+  company_id: string;
+  profile_photo?: string | null;
+  face_vector?: number[] | null;
+}
+
+interface LastEntry {
+  event_type: EventType;
+  created_at: string;
+}
+
+export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, biometricEnabled = false, onSuccess, onBack }) => {
+    const { isLoading, isInside, distance, currentLocation, accuracy, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
     const [pin, setPin] = useState('');
     const [step, setStep] = useState<'pin' | 'action' | 'face'>('pin');
     const [isCameraActive, setIsCameraActive] = useState(false);
-    const [currentUser, setCurrentUser] = useState<any>(null);
-    const [lastEntry, setLastEntry] = useState<any>(null);
-    const [selectedType, setSelectedType] = useState<any>(null);
+    const [currentUser, setCurrentUser] = useState<KioskUser | null>(null);
+    const [lastEntry, setLastEntry] = useState<LastEntry | null>(null);
+    const [selectedType, setSelectedType] = useState<EventType | null>(null);
     const [status, setStatus] = useState<{ type: 'success' | 'error' | 'loading', msg: string } | null>(null);
+    const [countdown, setCountdown] = useState<number | null>(null);
+    const [isModelLoaded, setIsModelLoaded] = useState(false);
+    
     const webcamRef = useRef<Webcam>(null);
+    const inactivityTimerRef = useRef<number | null>(null);
+    const countdownRef = useRef<number | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+
+    React.useEffect(() => {
+        const initKiosk = async () => {
+            if (biometricEnabled) {
+                try {
+                    const MODEL_URL = '/models';
+                    await Promise.all([
+                        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                    ]);
+                    setIsModelLoaded(true);
+                } catch (err) {
+                    console.error('Error loading face-api models:', err);
+                }
+            }
+        };
+        initKiosk();
+    }, [biometricEnabled]);
+
+    const startInactivityTimer = () => {
+        cancelInactivityTimer();
+        inactivityTimerRef.current = window.setTimeout(() => {
+            let count = 10;
+            setCountdown(count);
+            countdownRef.current = window.setInterval(() => {
+                count -= 1;
+                if (count <= 0) {
+                    resetKiosk();
+                    cancelInactivityTimer();
+                } else {
+                    setCountdown(count);
+                }
+            }, 1000) as unknown as number;
+        }, 50000); // 50s before countdown
+    };
+
+    const cancelInactivityTimer = () => {
+        if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current);
+        if (countdownRef.current) window.clearInterval(countdownRef.current);
+        inactivityTimerRef.current = null;
+        countdownRef.current = null;
+        setCountdown(null);
+    };
+
+    React.useEffect(() => {
+        return () => {
+            cancelInactivityTimer();
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => t.stop());
+            }
+        };
+    }, []);
+
+    // Capture stream for proper cleanup
+    React.useEffect(() => {
+        const video = webcamRef.current?.video;
+        if (video?.srcObject instanceof MediaStream) {
+            streamRef.current = video.srcObject;
+        }
+    }, [isCameraActive]);
 
     const handlePinSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -56,34 +141,92 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setLastEntry(entry);
         setStep('action');
         setStatus(null);
+        // Defer timer to avoid blocking INP
+        setTimeout(() => startInactivityTimer(), 0);
     };
 
-    const handleActionSelect = (type: any) => {
+    const handleActionSelect = (type: EventType) => {
         setSelectedType(type);
-        // Only 'in' and 'out' require photo evidence
-        if (type === 'in' || type === 'out') {
-            setStep('face');
-            setIsCameraActive(true);
-        } else {
-            registerEntry(type, null);
-        }
+        // Defer timer and heavy state changes to improve INP
+        setTimeout(() => {
+            if (biometricEnabled && isModelLoaded) {
+                setStep('face');
+                setIsCameraActive(true);
+                setTimeout(() => { cancelInactivityTimer(); startInactivityTimer(); }, 0);
+            } else {
+                registerEntry(type, null);
+            }
+        }, 0);
     };
 
     const handleFaceVerify = async () => {
         if (!webcamRef.current) return;
-        setStatus({ type: 'loading', msg: 'Capturando evidencia...' });
+        cancelInactivityTimer();
+        setStatus({ type: 'loading', msg: 'Analizando evidencia...' });
         const imageSrc = webcamRef.current.getScreenshot();
 
-        if (imageSrc) {
-            registerEntry(selectedType, imageSrc);
-        } else {
+        if (!imageSrc) {
             setStatus({ type: 'error', msg: 'No se pudo capturar la foto. Intenta de nuevo.' });
+            return;
         }
+
+        let isVerified = true;
+        let biometricMatch: boolean | null = null;
+        let biometricConfidence: number | null = null;
+        
+
+
+        if (biometricEnabled && isModelLoaded && currentUser?.face_vector && currentUser.face_vector.length > 0) {
+            try {
+
+                const img = new Image();
+                img.src = imageSrc;
+                await new Promise(resolve => img.onload = resolve);
+
+                const detections = await faceapi
+                    .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({
+                        inputSize: 416,    // optimizado para precisión
+                        scoreThreshold: 0.3 // más permisivo
+                    }))
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+
+
+                if (detections) {
+
+                    const capturedVector = Array.from(detections.descriptor);
+                    const result = compareFaceVectors(currentUser.face_vector, capturedVector);
+                    
+                    biometricMatch = result.match;
+                    biometricConfidence = result.confidence;
+                    isVerified = biometricMatch;
+                    
+
+
+                    // Si NO hay match, informamos pero permitimos el flujo (auditoría posterior)
+                    if (!biometricMatch) {
+
+                    }
+                } else {
+
+                    setStatus({ type: 'error', msg: 'No se detectó rostro. Mira directo a la cámara e intenta de nuevo.' });
+                    // No permitimos registrar si la biometría está activa y NO se detectó un rostro
+                    return;
+                }
+            } catch (bioError) {
+                console.error('[FACEAPI ERROR]', bioError);
+                setStatus({ type: 'error', msg: 'Error en la verificación biométrica. Intenta de nuevo.' });
+                return;
+            }
+        }
+
+        registerEntry(selectedType!, imageSrc, isVerified, biometricMatch, biometricConfidence);
     };
 
-    const registerEntry = async (type: string, photoBase64?: string | null) => {
-        // Double check location just before saving
-        if (isInside === false) {
+    const registerEntry = async (type: string, photoBase64?: string | null, isVerified: boolean = true, biometricMatch: boolean | null = null, biometricConfidence: number | null = null) => {
+        // Double check location just before saving if location tracking is active
+        if (targetLocation !== null && isInside === false) {
             setStatus({ type: 'error', msg: 'Registro bloqueado: Estás fuera del área autorizada.' });
             return;
         }
@@ -92,7 +235,6 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
         const now = new Date();
         const nowISO = now.toISOString();
-        // Generar fecha local YYYY-MM-DD sin desfase UTC
         const localDate = now.toLocaleDateString('en-CA');
 
         const isReturn = ['breakfast', 'lunch', 'active_pause', 'other'].includes(lastEntry?.event_type);
@@ -100,21 +242,29 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             ? `Regreso de ${getEventLabel(lastEntry.event_type)}`
             : getEventLabel(type);
 
+        // Build metadata carefully to ensure biometric fields are present
+        const metadata: TimeEntryMetadata = {
+            biometric_match: biometricMatch,
+            biometric_confidence: biometricConfidence,
+            method: photoBase64 ? 'photo-evidence' : 'pin-only',
+            event_label: eventLabel,
+            is_return: isReturn,
+            full_evidence: !!photoBase64,
+            photo_evidence: photoBase64 || null
+        };
+
         const insertData = {
             profile_id: currentUser.id,
             company_id: companyId,
             event_type: type,
-            date: localDate, // Usar fecha local
+            date: localDate,
             clock_in: nowISO,
             clock_out: type === 'out' ? nowISO : null,
-            is_verified: true,
-            metadata: {
-                method: photoBase64 ? 'photo-evidence' : 'pin-only',
-                photo_evidence: photoBase64 || null, // Guardar evidencia completa
-                full_evidence: !!photoBase64,
-                event_label: eventLabel,
-                is_return: isReturn
-            }
+            is_verified: isVerified,
+            location_snapshot: currentLocation
+                ? { lat: currentLocation.lat, lng: currentLocation.lng }
+                : null,
+            metadata
         };
 
         const { error } = await supabase.from('InA_time_entries').insert([insertData]);
@@ -122,8 +272,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         if (error) {
             setStatus({ type: 'error', msg: 'Error: ' + error.message });
         } else {
-            const label = getEventLabel(type);
-            setStatus({ type: 'success', msg: `¡Hola ${currentUser.full_name}! ${label} registrado.` });
+            if (!isVerified) {
+                setStatus({ type: 'error', msg: 'Identidad no verificada. Marcación registrada con advertencia.' });
+            } else {
+                const label = getEventLabel(type);
+                setStatus({ type: 'success', msg: `¡Hola ${currentUser.full_name}! ${label} registrado.` });
+            }
             onSuccess(currentUser.id, type as any);
             setTimeout(() => resetKiosk(), 3000);
         }
@@ -142,6 +296,10 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     };
 
     const resetKiosk = () => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
         setPin('');
         setStep('pin');
         setIsCameraActive(false);
@@ -149,9 +307,10 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setLastEntry(null);
         setSelectedType(null);
         setStatus(null);
+        cancelInactivityTimer();
     };
 
-    if (isInside === null && step === 'pin') {
+    if (isLoading && step === 'pin') {
         return (
             <div className="flex flex-col items-center justify-center p-20 text-muted-foreground animate-pulse space-y-6 max-w-2xl mx-auto">
                 <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -173,7 +332,29 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
     return (
         <div className="max-w-md mx-auto relative animate-in zoom-in-95 duration-500">
-            {(isInside === false || geoError) && (
+            {countdown !== null && (
+                <div 
+                    onClick={() => { 
+                        // Defer to improve INP
+                        setTimeout(() => {
+                            cancelInactivityTimer(); 
+                            startInactivityTimer();
+                        }, 0);
+                    }}
+                    className="absolute -top-12 left-0 right-0 bg-red-600 text-white py-2 px-4 rounded-xl text-center text-xs font-black animate-pulse cursor-pointer z-[60] flex items-center justify-center gap-2"
+                >
+                    <Timer className="w-4 h-4" />
+                    ⏱ Sesión expira en {countdown}s — toca para continuar
+                </div>
+            )}
+            {targetLocation === null && (
+                <div className="mb-6 p-4 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-sm border border-amber-500/20 z-50 relative">
+                    <AlertCircle className="w-5 h-5 shrink-0" />
+                    <span className="text-center text-[10px] font-black uppercase tracking-widest">⚠ Sede sin GPS configurado — marcación sin validación de ubicación</span>
+                </div>
+            )}
+            
+            {(targetLocation !== null && (isInside === false || geoError)) && (
                 <div className="mb-6 p-6 bg-destructive text-destructive-foreground rounded-3xl flex flex-col items-center gap-4 font-bold shadow-xl border-2 border-white/20 z-50 relative">
                     <div className="flex items-center gap-3">
                         <AlertCircle className="w-6 h-6 shrink-0" />
@@ -239,6 +420,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                                         if (key === 'clear') setPin('');
                                         else if (key === 'ok') handlePinSubmit(new Event('submit') as any);
                                         else if (typeof key === 'number') setPin(prev => prev.length < 6 ? prev + key : prev);
+                                        
+                                        // Defer timer cleanup/start to avoid blocking visual update (INP)
+                                        setTimeout(() => { 
+                                            cancelInactivityTimer(); 
+                                            startInactivityTimer(); 
+                                        }, 0);
                                     }}
                                     className={`py-4 text-xl font-black rounded-2xl transition-all active:scale-90 ${key === 'ok' ? 'bg-primary text-primary-foreground col-span-1 shadow-lg' :
                                         key === 'clear' ? 'bg-muted text-muted-foreground' : 'bg-muted/10 hover:bg-muted/20 border'
@@ -252,14 +439,24 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                 ) : step === 'action' ? (
                     <div className="space-y-6 animate-in slide-in-from-right-8 duration-500">
                         <div className="flex items-center justify-between">
-                            <button onClick={resetKiosk} className="p-2 hover:bg-muted rounded-full transition-all text-muted-foreground">
-                                <ArrowLeft className="w-5 h-5" />
+                            <button 
+                                onClick={() => {
+                                    setStep('pin');
+                                    setCurrentUser(null);
+                                    setLastEntry(null);
+                                    setPin('');
+                                    // Defer cleanup
+                                    setTimeout(() => cancelInactivityTimer(), 0);
+                                }} 
+                                className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
+                            >
+                                <ArrowLeft className="w-4 h-4" /> Cambiar empleado
                             </button>
                             <div className="text-center">
                                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">Colaborador</p>
-                                <p className="font-black text-primary text-lg">{currentUser.full_name}</p>
+                                <p className="font-black text-primary text-lg">{currentUser?.full_name}</p>
                             </div>
-                            <div className="w-9" />
+                            <div className="w-24" />
                         </div>
 
                         <div className="grid grid-cols-1 gap-3">
@@ -322,14 +519,23 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                 ) : (
                     <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500">
                         <div className="flex items-center justify-between">
-                            <button onClick={() => setStep('action')} className="p-2 hover:bg-muted rounded-full transition-all text-muted-foreground">
-                                <ArrowLeft className="w-5 h-5" />
+                            <button 
+                                onClick={() => {
+                                    setStep('action');
+                                    setSelectedType(null);
+                                    setIsCameraActive(false);
+                                    // Defer timer start to improve INP
+                                    setTimeout(() => startInactivityTimer(), 0);
+                                }} 
+                                className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
+                            >
+                                <ArrowLeft className="w-4 h-4" /> Cambiar acción
                             </button>
                             <div className="text-center">
                                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Evidencia Fotográfica</p>
-                                <p className="font-black text-primary">{getEventLabel(selectedType)}</p>
+                                <p className="font-black text-primary">{selectedType ? getEventLabel(selectedType) : ''}</p>
                             </div>
-                            <div className="w-9" />
+                            <div className="w-24" />
                         </div>
 
                         <div className="relative rounded-[2rem] overflow-hidden border-4 border-primary/20 aspect-video bg-black shadow-inner">
@@ -364,8 +570,11 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                             <CheckCircle2 className="w-3 h-3 text-green-500" /> BIO-ID: ACTIVO
                         </div>
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-tighter">
-                            <div className={`w-2 h-2 rounded-full ${isInside ? 'bg-green-500' : (geoError ? 'bg-amber-500' : 'bg-red-500')}`} />
-                            ZONA: {geoError ? 'ERROR GPS' : (isInside ? 'DENTRO DE RANGO' : (isInside === null ? 'VALIDANDO...' : `FUERA DE RANGO (${Math.round(distance || 0)}m)`))}
+                            <div className={`w-2 h-2 rounded-full ${targetLocation === null ? 'bg-amber-500' : isInside ? 'bg-green-500' : (geoError ? 'bg-amber-500' : 'bg-red-500')}`} />
+                            ZONA: {targetLocation === null ? 'SIN VALIDACIÓN' : geoError ? 'ERROR GPS' : (isInside ? 'DENTRO DE RANGO' : (isLoading ? 'VALIDANDO...' : `FUERA DE RANGO (${Math.round(distance || 0)}m)`))}
+                            {accuracy !== null && (
+                                <span className="ml-1 opacity-70 border-l pl-2 border-primary/20">±{Math.round(accuracy)}m</span>
+                            )}
                         </div>
                     </div>
                 </div>

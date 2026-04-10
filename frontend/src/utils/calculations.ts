@@ -9,16 +9,14 @@ export interface DayShiftSummary {
     totalCost: number;
 }
 
-export function calculateShift(entry: TimeEntry, profile: Profile): DayShiftSummary {
-    const clockIn = new Date(entry.timestamp);
-    // This is a simplified version for the MVP. 
-    // Real logic would calculate the difference between clockIn and clockOut.
-
-    // For now, let's assume entries come in pairs or we calculate from a duration.
-    // The requirement says "Los reportes separan automáticamente las horas después de las 6:00 PM".
-
+export function calculateShift(_entry: TimeEntry, _profile: Profile): any {
+    // NOTA: El cálculo real de nómina está implementado en
+    // AdminDashboard.tsx en la función useMemo de statsData.
+    // Esta función está reservada para una futura refactorización
+    // que centralice toda la lógica de cálculo aquí.
+    // Por ahora retorna valores vacíos para no romper imports existentes.
     return {
-        date: clockIn.toISOString().split('T')[0],
+        date: '',
         ordinaryHours: 0,
         nightHours: 0,
         totalCost: 0

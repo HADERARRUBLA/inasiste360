@@ -254,11 +254,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 const extraDayMin = getOverlap(schedThreshold, nightThreshold);
                 const extraNightMin = getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
 
-                const baseRate = isSunday ? (profile.hourly_rate_sunday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
+                const baseRate = isSunday ? (profile.hourly_rate_sunday_holiday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
                 
                 const cost = (baseMin * baseRate / 60) + 
                              (extraDayMin * (profile.hourly_rate_extra_day || baseRate || 0) / 60) + 
-                             (extraNightMin * (profile.hourly_rate_night || baseRate || 0) / 60);
+                             (extraNightMin * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
 
                 estimatedCost += cost;
                 userSummaries[profileId].totalCost += cost;
@@ -411,14 +411,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
     const exportToExcel = () => {
         // 1. Logs Sheet
-        const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo'];
+        const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo', 'Evidencia', 'Biometria', 'Confianza'];
         const logRows = filteredEntries.map(e => [
             e.date || e.created_at?.split('T')[0],
             e.InA_profiles?.full_name || 'N/A',
             e.InA_profiles?.national_id || 'N/A',
             e.metadata?.event_label || e.event_type,
             e.created_at ? new Date(e.created_at).toLocaleTimeString() : 'N/A',
-            e.metadata?.method || 'N/A'
+            e.metadata?.method || 'N/A',
+            e.metadata?.photo_evidence ? 'CON FOTO' : 'SIN FOTO',
+            e.metadata?.biometric_match === true ? 'OK' : e.metadata?.biometric_match === false ? 'FALLO' : 'N/A',
+            e.metadata?.biometric_confidence ? `${e.metadata.biometric_confidence}%` : 'N/A'
         ]);
 
         // 2. Summary Sheet
@@ -731,8 +734,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                                             </td>
                                             <td className="px-8 py-5 text-primary">${p.hourly_rate_base?.toLocaleString()}</td>
                                             <td className="px-8 py-5">${p.hourly_rate_extra_day?.toLocaleString()}</td>
-                                            <td className="px-8 py-5">${p.hourly_rate_night?.toLocaleString()}</td>
-                                            <td className="px-8 py-5 text-orange-600">${p.hourly_rate_sunday?.toLocaleString()}</td>
+                                            <td className="px-8 py-5">${p.hourly_rate_extra_night?.toLocaleString()}</td>
+                                            <td className="px-8 py-5 text-orange-600">${p.hourly_rate_sunday_holiday?.toLocaleString()}</td>
                                             <td className="px-8 py-5 text-[9px] text-muted-foreground">{p.use_custom_schedule ? 'PERSONALIZADO' : 'GLOBAL SEDE'}</td>
                                         </tr>
                                     ))}

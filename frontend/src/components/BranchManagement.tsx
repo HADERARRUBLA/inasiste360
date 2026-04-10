@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius, CheckCircle2 } from 'lucide-react';
+import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius, CheckCircle2, Search, MapPinOff } from 'lucide-react';
 import type { Company } from '../types';
+import { formatLatLng, validateLatLng, parseLatLng } from '../utils/geoUtils';
+import { GeoPickerMap } from './GeoPickerMap';
 
 const DEFAULT_SCHEDULE = {
     mon: { start: '08:00', end: '17:00', active: true },
@@ -23,7 +25,11 @@ const dayNames: { [key: string]: string } = {
     sun: 'Domingo',
 };
 
-export const BranchManagement: React.FC = () => {
+interface BranchManagementProps {
+    onSave?: () => void;
+}
+
+export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) => {
     const [branches, setBranches] = useState<any[]>([]);
     const [organizations, setOrganizations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -41,6 +47,33 @@ export const BranchManagement: React.FC = () => {
     });
 
     const [isGettingLocation, setIsGettingLocation] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+
+    const handleSearchAddress = async () => {
+        if (!searchQuery.trim()) return;
+        setIsSearching(true);
+        setStatus(null);
+        try {
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=3&countrycodes=co`,
+                { headers: { 'User-Agent': 'InAsiste360/1.0' } }
+            );
+            const data = await res.json();
+            if (data && data.length > 0) {
+                setSearchResults(data);
+            } else {
+                setSearchResults([]);
+                setStatus({ type: 'error', msg: 'No se encontró la dirección. Intenta ser más específico.' });
+            }
+        } catch (err) {
+            console.error('Search error:', err);
+            setStatus({ type: 'error', msg: 'Error al buscar dirección.' });
+        } finally {
+            setIsSearching(false);
+        }
+    };
 
     const getGeolocation = () => {
         setIsGettingLocation(true);
@@ -53,10 +86,10 @@ export const BranchManagement: React.FC = () => {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
-                // Set with a reasonable precision for attendance checking
-                const latStr = latitude.toFixed(15);
-                const lngStr = longitude.toFixed(15);
-                setFormData(prev => ({ ...prev, lat_long: `${latStr}, ${lngStr}` }));
+                const formatted = formatLatLng(latitude, longitude);
+                setFormData(prev => ({ ...prev, lat_long: formatted }));
+                // Mostrar la precisión obtenida en el estado de status:
+                setStatus({ type: 'success', msg: `GPS capturado. Precisión: ±${Math.round(position.coords.accuracy)}m` });
                 setIsGettingLocation(false);
             },
             (error) => {
@@ -98,9 +131,26 @@ export const BranchManagement: React.FC = () => {
         fetchBranches();
     }, []);
 
+    // Sincronización de lat_long (input) -> Mapa con debounce de 500ms
+    const [mapValue, setMapValue] = useState<{ lat: number; lng: number } | null>(null);
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const parsed = parseLatLng(formData.lat_long);
+            if (parsed) {
+                setMapValue(parsed);
+            }
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [formData.lat_long]);
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatus(null);
+
+        if (formData.lat_long && !validateLatLng(formData.lat_long)) {
+            setStatus({ type: 'error', msg: 'Coordenadas inválidas. Usa el botón GPS o ingresa formato: latitud,longitud' });
+            return;
+        }
 
         const dataToSave = {
             ...formData,
@@ -126,6 +176,8 @@ export const BranchManagement: React.FC = () => {
             setEditingId(null);
             setFormData({ name: '', address: '', lat_long: '', radius_limit: 100, organization_id: '', work_schedule: { ...DEFAULT_SCHEDULE } as any });
             fetchBranches();
+            if (onSave) onSave();
+
         } catch (err: any) {
             setStatus({ type: 'error', msg: 'Error al guardar: ' + err.message });
         }
@@ -150,6 +202,8 @@ export const BranchManagement: React.FC = () => {
             const { error } = await supabase.from('InA_companies').delete().eq('id', id);
             if (error) throw error;
             fetchBranches();
+            if (onSave) onSave();
+
         } catch (err: any) {
             alert('Error al eliminar: ' + err.message);
         }
@@ -251,6 +305,65 @@ export const BranchManagement: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
+
+                            <div className="space-y-2 mt-4">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
+                                    <MapPin className="w-3 h-3" /> Selección Visual en Mapa
+                                </label>
+                                <GeoPickerMap
+                                    value={mapValue}
+                                    radius={formData.radius_limit}
+                                    onChange={(pos) => setFormData(prev => ({ ...prev, lat_long: formatLatLng(pos.lat, pos.lng) }))}
+                                    height={280}
+                                />
+                                
+                                {/* Nominatim Search UI */}
+                                <div className="mt-4 space-y-2">
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <input
+                                                type="text"
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleSearchAddress())}
+                                                placeholder="Buscar por dirección (ej: Carrera 7 # 12-34 Medellín)"
+                                                className="w-full px-4 py-2 text-sm border-2 border-muted rounded-xl focus:border-primary outline-none"
+                                            />
+                                            {isSearching && <div className="absolute right-3 top-2.5 animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSearchAddress}
+                                            className="px-4 py-2 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-xl transition-all"
+                                        >
+                                            <Search className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    
+                                    {searchResults.length > 0 && (
+                                        <div className="bg-background border-2 border-primary/20 rounded-xl overflow-hidden shadow-lg animate-in fade-in slide-in-from-top-2">
+                                            {searchResults.map((res: any, idx: number) => (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const lat = parseFloat(res.lat);
+                                                        const lon = parseFloat(res.lon);
+                                                        setFormData(prev => ({ ...prev, lat_long: formatLatLng(lat, lon) }));
+                                                        setSearchResults([]);
+                                                        setSearchQuery('');
+                                                    }}
+                                                    className="w-full text-left px-4 py-3 text-[11px] font-bold border-b last:border-0 hover:bg-primary/10 transition-colors flex items-start gap-2"
+                                                >
+                                                    <MapPin className="w-3 h-3 mt-0.5 text-primary shrink-0" />
+                                                    <span>{res.display_name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             <div className="space-y-2">
                                     <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
                                         <Radius className="w-3 h-3" /> Radio Geovalla (Metros): {formData.radius_limit}m
@@ -379,9 +492,26 @@ export const BranchManagement: React.FC = () => {
                                     <span className="font-bold text-sm text-primary uppercase">{branch.organization?.name || 'GLOBAL'}</span>
                                 </td>
                                 <td className="px-10 py-8">
-                                    <div className="space-y-1">
-                                        <span className="block px-3 py-1 bg-muted rounded-lg text-[10px] font-black uppercase">Radio: {branch.radius_limit}m</span>
-                                        <span className="block font-mono text-[9px] text-muted-foreground">{branch.lat_long || 'N/A'}</span>
+                                    <div className="space-y-2 max-w-[150px]">
+                                        <span className="block px-3 py-1 bg-muted rounded-lg text-[10px] font-black uppercase text-center">Radio: {branch.radius_limit}m</span>
+                                        {branch.lat_long ? (
+                                            <div className="rounded-xl overflow-hidden border border-primary/10 shadow-sm transition-transform hover:scale-105">
+                                                <GeoPickerMap 
+                                                    value={parseLatLng(branch.lat_long)} 
+                                                    radius={branch.radius_limit} 
+                                                    readonly={true}
+                                                    height={100}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="h-[100px] flex flex-col items-center justify-center bg-muted/20 border border-dashed rounded-xl gap-1">
+                                                <MapPinOff className="w-5 h-5 text-muted-foreground/50" />
+                                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Sin GPS</span>
+                                            </div>
+                                        )}
+                                        <span className="block font-mono text-[9px] text-muted-foreground text-center truncate" title={branch.lat_long || 'N/A'}>
+                                            {branch.lat_long || 'N/A'}
+                                        </span>
                                     </div>
                                 </td>
                                 <td className="px-10 py-8 text-right">

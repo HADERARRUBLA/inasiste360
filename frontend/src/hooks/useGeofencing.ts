@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { haversineDistance } from '../utils/geoUtils';
 
 interface Location {
     lat: number;
@@ -9,28 +10,24 @@ export function useGeofencing(targetLocation: Location | null, radiusMeters: num
     const [isInside, setIsInside] = useState<boolean | null>(null);
     const [distance, setDistance] = useState<number | null>(null);
     const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
+    const [accuracy, setAccuracy] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
 
+    // isLoading es true cuando hay una localidad objetivo pero aún no hemos resuelto si estamos dentro
+    const isLoading = targetLocation !== null && isInside === null && error === null;
+
     const refresh = () => setRefreshKey(prev => prev + 1);
 
-    const calculateDistance = (loc1: Location, loc2: Location) => {
-        const R = 6371e3; // Earth radius in meters
-        const φ1 = (loc1.lat * Math.PI) / 180;
-        const φ2 = (loc2.lat * Math.PI) / 180;
-        const Δφ = ((loc2.lat - loc1.lat) * Math.PI) / 180;
-        const Δλ = ((loc2.lng - loc1.lng) * Math.PI) / 180;
-
-        const a =
-            Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        return R * c;
-    };
-
     useEffect(() => {
-        if (!targetLocation) return;
+        if (!targetLocation) {
+            setIsInside(null);
+            setDistance(null);
+            setAccuracy(null);
+            setError(null);
+            return;
+        }
+        
         setIsInside(null); // Reset while searching
 
         if (!navigator.geolocation) {
@@ -45,7 +42,8 @@ export function useGeofencing(targetLocation: Location | null, radiusMeters: num
                     lng: position.coords.longitude,
                 };
                 setCurrentLocation(loc);
-                const dist = calculateDistance(loc, targetLocation);
+                setAccuracy(position.coords.accuracy);
+                const dist = haversineDistance(loc, targetLocation);
                 setDistance(dist);
                 setIsInside(dist <= radiusMeters);
                 setError(null);
@@ -54,11 +52,11 @@ export function useGeofencing(targetLocation: Location | null, radiusMeters: num
                 setError(err.message);
                 setIsInside(false);
             },
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
         );
 
         return () => navigator.geolocation.clearWatch(watchId);
     }, [targetLocation, radiusMeters, refreshKey]);
 
-    return { isInside, currentLocation, distance, error, refresh };
+    return { isInside, currentLocation, distance, accuracy, isLoading, error, refresh };
 }

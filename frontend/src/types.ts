@@ -58,6 +58,17 @@ export interface Profile {
     InA_companies?: Company; // Sede
 }
 
+export interface TimeEntryMetadata {
+    biometric_match: boolean | null;
+    biometric_confidence: number | null;
+    method: 'photo-evidence' | 'pin-only';
+    event_label?: string;
+    is_return?: boolean;
+    full_evidence?: boolean;
+    photo_evidence?: string | null;
+    ip?: string;
+}
+
 export interface TimeEntry {
     id: string;
     profile_id: string;
@@ -67,10 +78,12 @@ export interface TimeEntry {
     clock_in?: string;
     clock_out?: string;
     geo_snapshot?: { lat: number; lng: number };
-    metadata: any;
+    location_snapshot?: { lat: number; lng: number } | null;
+    metadata: TimeEntryMetadata | any; // Permitting transition, but focusing on new structure
     created_at?: string;
     date?: string; // Derived field if needed
     InA_profiles?: Profile;
+    profiles?: Profile; // Para compatibilidad con joins específicos
 }
 
 export type TimeEntryWithProfile = TimeEntry & { InA_profiles: Profile };

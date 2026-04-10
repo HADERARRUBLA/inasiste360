@@ -11,6 +11,7 @@ import { AuditSystem } from './components/AuditSystem';
 
 import { OrganizationManagement } from './components/OrganizationManagement';
 import { LandingPage } from './components/LandingPage';
+import { parseLatLng } from './utils/geoUtils';
 
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -53,9 +54,15 @@ function App() {
       if (companiesData && companiesData.length > 0) {
         setCompanies(companiesData);
 
-        // Priority: 1. Profile company, 2. LocalStorage pinned, 3. First available
+        // Priority: Current selection (if valid) > Profile company > LocalStorage pinned > First available
         const savedId = localStorage.getItem('asiste360_pinned_company');
-        const finalId = profile.company_id || (savedId && companiesData.find(c => c.id === savedId) ? savedId : companiesData[0].id);
+        
+        let finalId = selectedCompanyId;
+        
+        // If current selection is no longer in the list or is null, recalculate
+        if (!finalId || !companiesData.find(c => c.id === finalId)) {
+          finalId = profile.company_id || (savedId && companiesData.find(c => c.id === savedId) ? savedId : companiesData[0].id);
+        }
 
         setSelectedCompanyId(finalId);
       }
@@ -96,7 +103,11 @@ function App() {
 
           // Persistence logic: prioritize pinned company for this device
           const savedId = localStorage.getItem('asiste360_pinned_company');
-          if (savedId && data.find(c => c.id === savedId)) {
+          const savedKioskId = localStorage.getItem('asiste360_kiosk_company');
+
+          if (savedKioskId && data.find(c => c.id === savedKioskId)) {
+            setSelectedCompanyId(savedKioskId);
+          } else if (savedId && data.find(c => c.id === savedId)) {
             setSelectedCompanyId(savedId);
           } else {
             setSelectedCompanyId(data[0].id);
@@ -116,13 +127,7 @@ function App() {
 
   const targetLocation = useMemo(() => {
     if (!currentCompany?.lat_long) return null;
-    try {
-      const [lat, lng] = currentCompany.lat_long.split(',').map(Number);
-      if (isNaN(lat) || isNaN(lng)) return null;
-      return { lat, lng };
-    } catch {
-      return null;
-    }
+    return parseLatLng(currentCompany.lat_long);
   }, [currentCompany?.lat_long]);
 
   const handleSignOut = () => {
@@ -131,14 +136,34 @@ function App() {
     setLoginData({ id: '', pin: '' });
   };
 
+  const enterKioskMode = () => {
+    localStorage.setItem('asiste360_kiosk_company', selectedCompanyId ?? '');
+    setIsKiosk(true);
+  };
+
   if (isKiosk) {
+    let parsedSettings: any = {};
+    try {
+      parsedSettings = typeof currentCompany?.settings === 'string'
+        ? JSON.parse(currentCompany.settings)
+        : currentCompany?.settings ?? {};
+    } catch (e) {
+      console.error('[BIOMETRIA] Error parsing settings:', e);
+      parsedSettings = {};
+    }
+      
+    const biometricEnabled = parsedSettings?.features?.biometric_verification === true;
+
+
+
     return (
       <KioskMode
         companyId={selectedCompanyId || ''}
         companyName={currentCompany?.name}
         targetLocation={targetLocation}
         radiusMeters={currentCompany?.radius_limit || 100}
-        onSuccess={(uid, type) => console.log('Registro exitoso:', uid, type)}
+        biometricEnabled={biometricEnabled}
+        onSuccess={(uid, type) => { /* Registro exitoso */ }}
         onBack={() => setIsKiosk(false)}
       />
     );
@@ -202,7 +227,7 @@ function App() {
             </button>
 
             <button
-              onClick={() => setIsKiosk(true)}
+              onClick={enterKioskMode}
               className="w-full flex items-center justify-center gap-2 text-xs font-black text-primary uppercase tracking-widest pt-4 border-t border-muted/50"
             >
               <LogIn className="w-4 h-4" /> Ir a Quiosco Biométrico
@@ -243,7 +268,7 @@ function App() {
             </div>
           )}
           <button
-            onClick={() => setIsKiosk(true)}
+            onClick={enterKioskMode}
             className="bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-white px-6 py-2.5 text-sm font-bold rounded-xl border transition-all active:scale-95"
           >
             Modo Quiosco
@@ -342,7 +367,7 @@ function App() {
                 onSave={() => userProfile?.national_id && fetchData(userProfile.national_id)}
               />
             ) : activeTab === 'branches' && userProfile?.role === 'superadmin' ? (
-              <BranchManagement />
+              <BranchManagement onSave={() => userProfile?.national_id && fetchData(userProfile.national_id)} />
             ) : activeTab === 'admins' && userProfile?.role === 'superadmin' ? (
               <AdminManagement />
             ) : activeTab === 'organizations' && userProfile?.role === 'superadmin' ? (
