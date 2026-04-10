@@ -66,7 +66,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
     useEffect(() => {
         const loadModels = async () => {
-            const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
+            const MODEL_URL = '/models';
             try {
                 await Promise.all([
                     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),

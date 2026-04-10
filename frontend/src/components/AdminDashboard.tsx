@@ -411,14 +411,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
     const exportToExcel = () => {
         // 1. Logs Sheet
-        const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo'];
+        const logHeaders = ['Fecha', 'Colaborador', 'ID', 'Evento', 'Hora', 'Metodo', 'Evidencia', 'Biometria', 'Confianza'];
         const logRows = filteredEntries.map(e => [
             e.date || e.created_at?.split('T')[0],
             e.InA_profiles?.full_name || 'N/A',
             e.InA_profiles?.national_id || 'N/A',
             e.metadata?.event_label || e.event_type,
             e.created_at ? new Date(e.created_at).toLocaleTimeString() : 'N/A',
-            e.metadata?.method || 'N/A'
+            e.metadata?.method || 'N/A',
+            e.metadata?.photo_evidence ? 'CON FOTO' : 'SIN FOTO',
+            e.metadata?.biometric_match === true ? 'OK' : e.metadata?.biometric_match === false ? 'FALLO' : 'N/A',
+            e.metadata?.biometric_confidence ? `${e.metadata.biometric_confidence}%` : 'N/A'
         ]);
 
         // 2. Summary Sheet
