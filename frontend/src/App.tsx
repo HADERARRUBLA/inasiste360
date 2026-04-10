@@ -142,18 +142,24 @@ function App() {
   };
 
   if (isKiosk) {
-    const settings = typeof currentCompany?.settings === 'string'
-      ? JSON.parse(currentCompany.settings)
-      : currentCompany?.settings ?? {};
+    let parsedSettings: any = {};
+    try {
+      parsedSettings = typeof currentCompany?.settings === 'string'
+        ? JSON.parse(currentCompany.settings)
+        : currentCompany?.settings ?? {};
+    } catch (e) {
+      console.error('[BIOMETRIA] Error parsing settings:', e);
+      parsedSettings = {};
+    }
       
-    const biometricEnabled = settings?.features?.biometric_verification === true;
+    const biometricEnabled = parsedSettings?.features?.biometric_verification === true;
 
     console.log('[BIOMETRIA DEBUG]', {
       company: currentCompany?.name,
-      settings: settings,
+      settings: parsedSettings,
       settingsType: typeof currentCompany?.settings,
-      features: settings?.features,
-      biometric: settings?.features?.biometric_verification,
+      features: parsedSettings?.features,
+      biometric: parsedSettings?.features?.biometric_verification,
       biometricEnabled: biometricEnabled
     });
 
