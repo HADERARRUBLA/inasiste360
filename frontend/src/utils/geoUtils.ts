@@ -9,10 +9,11 @@ export function formatLatLng(lat: number, lng: number): string {
 // Rechaza: NaN, lat fuera de [-90,90], lng fuera de [-180,180], string vacío
 export function parseLatLng(raw: string | null | undefined): { lat: number; lng: number } | null {
     if (!raw || typeof raw !== 'string') return null;
-    const parts = raw.split(',').map(p => parseFloat(p.trim()));
+    const parts = raw.split(',');
     if (parts.length !== 2) return null;
     
-    const [lat, lng] = parts;
+    const lat = parseFloat(parts[0].trim());
+    const lng = parseFloat(parts[1].trim());
     if (isNaN(lat) || isNaN(lng)) return null;
     if (lat < -90 || lat > 90) return null;
     if (lng < -180 || lng > 180) return null;
