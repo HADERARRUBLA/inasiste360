@@ -4,8 +4,8 @@ import { useGeofencing } from '../hooks/useGeofencing';
 import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2, Timer } from 'lucide-react';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
-import { EventType, TimeEntryMetadata } from '../types';
-import { compareFaceVectors } from '../utils/biometricUtils';
+import type { EventType, TimeEntryMetadata } from '../types';
+import { compareFaceVectors, euclideanDistance } from '../utils/biometricUtils';
 
 interface KioskModeProps {
     companyId: string;
@@ -182,24 +182,47 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         });
 
         if (biometricEnabled && isModelLoaded && currentUser?.face_vector && currentUser.face_vector.length > 0) {
-            console.log("Kiosk: Biometrics active, checking vector for user:", currentUser.id);
-            const img = new Image();
-            img.src = imageSrc;
-            await new Promise(resolve => img.onload = resolve);
-            const detections = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-            
-            if (detections) {
-                const currentVector = Array.from(detections.descriptor);
-                const distance = euclideanDistance(currentVector, currentUser.face_vector);
-                biometricMatch = distance <= 0.55; 
-                biometricConfidence = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
-                isVerified = biometricMatch;
-                console.log("Kiosk: Biometric result:", { biometricMatch, biometricConfidence });
-            } else {
-                biometricMatch = false;
-                biometricConfidence = 0;
-                isVerified = false;
-                console.log("Kiosk: No face detected in screenshot.");
+            try {
+                console.log('[FACEAPI] Iniciando detección...');
+                const img = new Image();
+                img.src = imageSrc;
+                await new Promise(resolve => img.onload = resolve);
+
+                const detections = await faceapi
+                    .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({
+                        inputSize: 416,    // optimizado para precisión
+                        scoreThreshold: 0.3 // más permisivo
+                    }))
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+                console.log('[FACEAPI] Resultado detección:', detections ? 'Rostro detectado' : 'Sin rostro');
+
+                if (detections) {
+                    console.log('[FACEAPI] Comparando vectores...');
+                    const capturedVector = Array.from(detections.descriptor);
+                    const result = compareFaceVectors(currentUser.face_vector, capturedVector);
+                    
+                    biometricMatch = result.match;
+                    biometricConfidence = result.confidence;
+                    isVerified = biometricMatch;
+                    
+                    console.log('[FACEAPI] Resultado comparación:', result);
+
+                    // Si NO hay match, informamos pero permitimos el flujo (auditoría posterior)
+                    if (!biometricMatch) {
+                        console.log('[FACEAPI] Alerta: No coincide el rostro.');
+                    }
+                } else {
+                    console.log('[FACEAPI] No se detectó rostro - informando al usuario');
+                    setStatus({ type: 'error', msg: 'No se detectó rostro. Mira directo a la cámara e intenta de nuevo.' });
+                    // No permitimos registrar si la biometría está activa y NO se detectó un rostro
+                    return;
+                }
+            } catch (bioError) {
+                console.error('[FACEAPI ERROR]', bioError);
+                setStatus({ type: 'error', msg: 'Error en la verificación biométrica. Intenta de nuevo.' });
+                return;
             }
         }
 
