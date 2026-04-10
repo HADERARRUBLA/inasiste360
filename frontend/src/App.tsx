@@ -11,6 +11,7 @@ import { AuditSystem } from './components/AuditSystem';
 
 import { OrganizationManagement } from './components/OrganizationManagement';
 import { LandingPage } from './components/LandingPage';
+import { parseLatLng } from './utils/geoUtils';
 
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -116,13 +117,7 @@ function App() {
 
   const targetLocation = useMemo(() => {
     if (!currentCompany?.lat_long) return null;
-    try {
-      const [lat, lng] = currentCompany.lat_long.split(',').map(Number);
-      if (isNaN(lat) || isNaN(lng)) return null;
-      return { lat, lng };
-    } catch {
-      return null;
-    }
+    return parseLatLng(currentCompany.lat_long);
   }, [currentCompany?.lat_long]);
 
   const handleSignOut = () => {
@@ -138,7 +133,7 @@ function App() {
         companyName={currentCompany?.name}
         targetLocation={targetLocation}
         radiusMeters={currentCompany?.radius_limit || 100}
-        onSuccess={(uid, type) => console.log('Registro exitoso:', uid, type)}
+        onSuccess={(uid, type) => { /* Registro exitoso */ }}
         onBack={() => setIsKiosk(false)}
       />
     );

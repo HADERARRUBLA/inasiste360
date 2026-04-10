@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Building2, MapPin, Navigation, Save, ShieldCheck, Radius, RefreshCcw } from 'lucide-react';
+import { formatLatLng, validateLatLng } from '../utils/geoUtils';
 
 interface CompanySetupProps {
     companyId: string | null;
@@ -69,6 +70,12 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
         setSaving(true);
         setStatus(null);
 
+        if (company.lat_long && !validateLatLng(company.lat_long)) {
+            setStatus({ type: 'error', msg: 'Coordenadas inválidas. Usa el botón GPS o ingresa formato: latitud,longitud' });
+            setSaving(false);
+            return;
+        }
+
         try {
             const { error: saveErr } = await supabase
                 .from('InA_companies')
@@ -99,11 +106,12 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
         setStatus({ type: 'success', msg: 'Detectando ubicación GPS...' });
         navigator.geolocation.getCurrentPosition(
             (pos) => {
+                const formatted = formatLatLng(pos.coords.latitude, pos.coords.longitude);
                 setCompany({
                     ...company,
-                    lat_long: `${pos.coords.latitude},${pos.coords.longitude}`
+                    lat_long: formatted
                 });
-                setStatus({ type: 'success', msg: 'Ubicación GPS capturada correctamente.' });
+                setStatus({ type: 'success', msg: `Ubicación GPS capturada correctamente. Precisión: ±${Math.round(pos.coords.accuracy)}m` });
             },
             () => setStatus({ type: 'error', msg: 'Error de GPS. Verifica permisos.' })
         );

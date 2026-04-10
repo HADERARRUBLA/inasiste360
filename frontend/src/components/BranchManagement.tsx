@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius, CheckCircle2 } from 'lucide-react';
 import type { Company } from '../types';
+import { formatLatLng, validateLatLng } from '../utils/geoUtils';
 
 const DEFAULT_SCHEDULE = {
     mon: { start: '08:00', end: '17:00', active: true },
@@ -53,10 +54,10 @@ export const BranchManagement: React.FC = () => {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
-                // Set with a reasonable precision for attendance checking
-                const latStr = latitude.toFixed(15);
-                const lngStr = longitude.toFixed(15);
-                setFormData(prev => ({ ...prev, lat_long: `${latStr}, ${lngStr}` }));
+                const formatted = formatLatLng(latitude, longitude);
+                setFormData(prev => ({ ...prev, lat_long: formatted }));
+                // Mostrar la precisión obtenida en el estado de status:
+                setStatus({ type: 'success', msg: `GPS capturado. Precisión: ±${Math.round(position.coords.accuracy)}m` });
                 setIsGettingLocation(false);
             },
             (error) => {
@@ -101,6 +102,11 @@ export const BranchManagement: React.FC = () => {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setStatus(null);
+
+        if (formData.lat_long && !validateLatLng(formData.lat_long)) {
+            setStatus({ type: 'error', msg: 'Coordenadas inválidas. Usa el botón GPS o ingresa formato: latitud,longitud' });
+            return;
+        }
 
         const dataToSave = {
             ...formData,

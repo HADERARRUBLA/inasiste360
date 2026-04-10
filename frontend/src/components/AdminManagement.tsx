@@ -103,7 +103,6 @@ export const AdminManagement: React.FC = () => {
                 console.error('Error detail (Supabase):', error);
                 throw error;
             }
-            console.log('Saved profile:', savedProfile);
 
             // Handle branch assignments
             if (savedProfile) {

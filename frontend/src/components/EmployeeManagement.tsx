@@ -202,7 +202,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         // Clean data - ensure we don't send any derived or nested objects if they accidentally got in
         const payload = { ...formData };
         
-        console.log('Guardando empleado con:', { ...payload, profile_photo: payload.profile_photo ? 'BASE64_IMAGE' : null });
 
         if (editingId) {
             const { error: err } = await supabase
@@ -216,7 +215,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         }
 
         if (!error) {
-            console.log('Empleado guardado exitosamente');
             setIsAdding(false);
             setEditingId(null);
             setFaceCaptures([]);

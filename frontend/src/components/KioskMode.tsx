@@ -14,7 +14,7 @@ interface KioskModeProps {
 }
 
 export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, onSuccess, onBack }) => {
-    const { isInside, distance, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
+    const { isLoading, isInside, distance, currentLocation, accuracy, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
     const [pin, setPin] = useState('');
     const [step, setStep] = useState<'pin' | 'action' | 'face'>('pin');
     const [isCameraActive, setIsCameraActive] = useState(false);
@@ -82,8 +82,8 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     };
 
     const registerEntry = async (type: string, photoBase64?: string | null) => {
-        // Double check location just before saving
-        if (isInside === false) {
+        // Double check location just before saving if location tracking is active
+        if (targetLocation !== null && isInside === false) {
             setStatus({ type: 'error', msg: 'Registro bloqueado: Estás fuera del área autorizada.' });
             return;
         }
@@ -108,6 +108,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             clock_in: nowISO,
             clock_out: type === 'out' ? nowISO : null,
             is_verified: true,
+            geo_snapshot: currentLocation ?? null,
             metadata: {
                 method: photoBase64 ? 'photo-evidence' : 'pin-only',
                 photo_evidence: photoBase64 || null, // Guardar evidencia completa
@@ -151,7 +152,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setStatus(null);
     };
 
-    if (isInside === null && step === 'pin') {
+    if (isLoading && step === 'pin') {
         return (
             <div className="flex flex-col items-center justify-center p-20 text-muted-foreground animate-pulse space-y-6 max-w-2xl mx-auto">
                 <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -173,7 +174,14 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
     return (
         <div className="max-w-md mx-auto relative animate-in zoom-in-95 duration-500">
-            {(isInside === false || geoError) && (
+            {targetLocation === null && (
+                <div className="mb-6 p-4 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-sm border border-amber-500/20 z-50 relative">
+                    <AlertCircle className="w-5 h-5 shrink-0" />
+                    <span className="text-center text-[10px] font-black uppercase tracking-widest">⚠ Sede sin GPS configurado — marcación sin validación de ubicación</span>
+                </div>
+            )}
+            
+            {(targetLocation !== null && (isInside === false || geoError)) && (
                 <div className="mb-6 p-6 bg-destructive text-destructive-foreground rounded-3xl flex flex-col items-center gap-4 font-bold shadow-xl border-2 border-white/20 z-50 relative">
                     <div className="flex items-center gap-3">
                         <AlertCircle className="w-6 h-6 shrink-0" />
@@ -364,8 +372,11 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                             <CheckCircle2 className="w-3 h-3 text-green-500" /> BIO-ID: ACTIVO
                         </div>
                         <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-tighter">
-                            <div className={`w-2 h-2 rounded-full ${isInside ? 'bg-green-500' : (geoError ? 'bg-amber-500' : 'bg-red-500')}`} />
-                            ZONA: {geoError ? 'ERROR GPS' : (isInside ? 'DENTRO DE RANGO' : (isInside === null ? 'VALIDANDO...' : `FUERA DE RANGO (${Math.round(distance || 0)}m)`))}
+                            <div className={`w-2 h-2 rounded-full ${targetLocation === null ? 'bg-amber-500' : isInside ? 'bg-green-500' : (geoError ? 'bg-amber-500' : 'bg-red-500')}`} />
+                            ZONA: {targetLocation === null ? 'SIN VALIDACIÓN' : geoError ? 'ERROR GPS' : (isInside ? 'DENTRO DE RANGO' : (isLoading ? 'VALIDANDO...' : `FUERA DE RANGO (${Math.round(distance || 0)}m)`))}
+                            {accuracy !== null && (
+                                <span className="ml-1 opacity-70 border-l pl-2 border-primary/20">±{Math.round(accuracy)}m</span>
+                            )}
                         </div>
                     </div>
                 </div>
