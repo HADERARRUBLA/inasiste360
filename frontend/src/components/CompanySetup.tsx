@@ -48,6 +48,7 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
             if (fetchErr) throw fetchErr;
             setCompany({
                 ...data,
+                settings: data.settings || {},
                 work_schedule: data.work_schedule && Object.keys(data.work_schedule).length > 0
                     ? { ...DEFAULT_SCHEDULE, ...data.work_schedule }
                     : { ...DEFAULT_SCHEDULE }
@@ -86,7 +87,8 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                     radius_limit: company.radius_limit,
                     night_shift_start_time: company.night_shift_start_time,
                     extra_day_start_time: company.extra_day_start_time,
-                    work_schedule: company.work_schedule
+                    work_schedule: company.work_schedule,
+                    settings: company.settings
                 })
                 .eq('id', company.id);
 
@@ -316,6 +318,44 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                         <div className="flex justify-between text-[8px] font-black text-muted-foreground uppercase tracking-tighter">
                             <span>20m (Muy Estricto)</span>
                             <span>500m (Flexible)</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Sección Biometría ── */}
+                <div className="md:col-span-2">
+                    <div className="bg-card border-2 p-10 rounded-[2.5rem] shadow-xl border-primary/10">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 bg-primary/10 rounded-2xl text-primary">
+                                        <ShieldCheck className="w-6 h-6" />
+                                    </div>
+                                    <h4 className="text-lg font-black uppercase tracking-tight italic text-foreground">Verificación biométrica en Kiosko</h4>
+                                </div>
+                                <p className="text-sm font-bold text-muted-foreground max-w-2xl">
+                                    Compara la foto capturada contra el vector facial del empleado.
+                                    Si el empleado no tiene vector registrado, permite marcar normalmente.
+                                </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer scale-125">
+                                <input
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={company.settings?.features?.biometric_verification ?? false}
+                                    onChange={(e) => {
+                                        const newSettings = {
+                                            ...company.settings,
+                                            features: {
+                                                ...(company.settings?.features ?? {}),
+                                                biometric_verification: e.target.checked
+                                            }
+                                        };
+                                        setCompany({ ...company, settings: newSettings });
+                                    }}
+                                />
+                                <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                            </label>
                         </div>
                     </div>
                 </div>
