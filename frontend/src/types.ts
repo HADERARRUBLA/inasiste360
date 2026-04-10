@@ -67,6 +67,7 @@ export interface TimeEntry {
     clock_in?: string;
     clock_out?: string;
     geo_snapshot?: { lat: number; lng: number };
+    location_snapshot?: { lat: number; lng: number } | null;
     metadata: any;
     created_at?: string;
     date?: string; // Derived field if needed

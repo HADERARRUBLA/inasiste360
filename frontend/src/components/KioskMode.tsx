@@ -108,7 +108,9 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             clock_in: nowISO,
             clock_out: type === 'out' ? nowISO : null,
             is_verified: true,
-            geo_snapshot: currentLocation ?? null,
+            location_snapshot: currentLocation
+                ? { lat: currentLocation.lat, lng: currentLocation.lng }
+                : null,
             metadata: {
                 method: photoBase64 ? 'photo-evidence' : 'pin-only',
                 photo_evidence: photoBase64 || null, // Guardar evidencia completa
