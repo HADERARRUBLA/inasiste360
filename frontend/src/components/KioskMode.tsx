@@ -174,16 +174,11 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         let biometricMatch: boolean | null = null;
         let biometricConfidence: number | null = null;
         
-        console.log('[KIOSKO BIOMETRIA]', {
-            biometricEnabled,
-            isModelLoaded,
-            tieneVector: !!currentUser?.face_vector,
-            longitud: currentUser?.face_vector?.length
-        });
+
 
         if (biometricEnabled && isModelLoaded && currentUser?.face_vector && currentUser.face_vector.length > 0) {
             try {
-                console.log('[FACEAPI] Iniciando detección...');
+
                 const img = new Image();
                 img.src = imageSrc;
                 await new Promise(resolve => img.onload = resolve);
@@ -196,10 +191,10 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                     .withFaceLandmarks()
                     .withFaceDescriptor();
 
-                console.log('[FACEAPI] Resultado detección:', detections ? 'Rostro detectado' : 'Sin rostro');
+
 
                 if (detections) {
-                    console.log('[FACEAPI] Comparando vectores...');
+
                     const capturedVector = Array.from(detections.descriptor);
                     const result = compareFaceVectors(currentUser.face_vector, capturedVector);
                     
@@ -207,14 +202,14 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                     biometricConfidence = result.confidence;
                     isVerified = biometricMatch;
                     
-                    console.log('[FACEAPI] Resultado comparación:', result);
+
 
                     // Si NO hay match, informamos pero permitimos el flujo (auditoría posterior)
                     if (!biometricMatch) {
-                        console.log('[FACEAPI] Alerta: No coincide el rostro.');
+
                     }
                 } else {
-                    console.log('[FACEAPI] No se detectó rostro - informando al usuario');
+
                     setStatus({ type: 'error', msg: 'No se detectó rostro. Mira directo a la cámara e intenta de nuevo.' });
                     // No permitimos registrar si la biometría está activa y NO se detectó un rostro
                     return;

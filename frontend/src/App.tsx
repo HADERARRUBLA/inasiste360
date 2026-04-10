@@ -154,14 +154,7 @@ function App() {
       
     const biometricEnabled = parsedSettings?.features?.biometric_verification === true;
 
-    console.log('[BIOMETRIA DEBUG]', {
-      company: currentCompany?.name,
-      settings: parsedSettings,
-      settingsType: typeof currentCompany?.settings,
-      features: parsedSettings?.features,
-      biometric: parsedSettings?.features?.biometric_verification,
-      biometricEnabled: biometricEnabled
-    });
+
 
     return (
       <KioskMode
