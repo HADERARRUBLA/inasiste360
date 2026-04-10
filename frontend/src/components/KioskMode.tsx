@@ -118,20 +118,23 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setLastEntry(entry);
         setStep('action');
         setStatus(null);
-        startInactivityTimer();
+        // Defer timer to avoid blocking INP
+        setTimeout(() => startInactivityTimer(), 0);
     };
 
     const handleActionSelect = (type: EventType) => {
-        cancelInactivityTimer();
         setSelectedType(type);
-        // Only 'in' and 'out' require photo evidence
-        if (type === 'in' || type === 'out') {
-            setStep('face');
-            setIsCameraActive(true);
-            startInactivityTimer();
-        } else {
-            registerEntry(type, null);
-        }
+        // Defer timer and heavy state changes to improve INP
+        setTimeout(() => {
+            cancelInactivityTimer();
+            if (type === 'in' || type === 'out') {
+                setStep('face');
+                setIsCameraActive(true);
+                startInactivityTimer();
+            } else {
+                registerEntry(type, null);
+            }
+        }, 0);
     };
 
     const handleFaceVerify = async () => {
@@ -249,7 +252,13 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         <div className="max-w-md mx-auto relative animate-in zoom-in-95 duration-500">
             {countdown !== null && (
                 <div 
-                    onClick={() => { cancelInactivityTimer(); startInactivityTimer(); }}
+                    onClick={() => { 
+                        // Defer to improve INP
+                        setTimeout(() => {
+                            cancelInactivityTimer(); 
+                            startInactivityTimer();
+                        }, 0);
+                    }}
                     className="absolute -top-12 left-0 right-0 bg-red-600 text-white py-2 px-4 rounded-xl text-center text-xs font-black animate-pulse cursor-pointer z-[60] flex items-center justify-center gap-2"
                 >
                     <Timer className="w-4 h-4" />
@@ -329,6 +338,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                                         if (key === 'clear') setPin('');
                                         else if (key === 'ok') handlePinSubmit(new Event('submit') as any);
                                         else if (typeof key === 'number') setPin(prev => prev.length < 6 ? prev + key : prev);
+                                        
+                                        // Defer timer cleanup/start to avoid blocking visual update (INP)
+                                        setTimeout(() => { 
+                                            cancelInactivityTimer(); 
+                                            startInactivityTimer(); 
+                                        }, 0);
                                     }}
                                     className={`py-4 text-xl font-black rounded-2xl transition-all active:scale-90 ${key === 'ok' ? 'bg-primary text-primary-foreground col-span-1 shadow-lg' :
                                         key === 'clear' ? 'bg-muted text-muted-foreground' : 'bg-muted/10 hover:bg-muted/20 border'
@@ -348,7 +363,8 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                                     setCurrentUser(null);
                                     setLastEntry(null);
                                     setPin('');
-                                    cancelInactivityTimer();
+                                    // Defer cleanup
+                                    setTimeout(() => cancelInactivityTimer(), 0);
                                 }} 
                                 className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
                             >
@@ -426,7 +442,8 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                                     setStep('action');
                                     setSelectedType(null);
                                     setIsCameraActive(false);
-                                    startInactivityTimer();
+                                    // Defer timer start to improve INP
+                                    setTimeout(() => startInactivityTimer(), 0);
                                 }} 
                                 className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
                             >
