@@ -54,9 +54,15 @@ function App() {
       if (companiesData && companiesData.length > 0) {
         setCompanies(companiesData);
 
-        // Priority: 1. Profile company, 2. LocalStorage pinned, 3. First available
+        // Priority: Current selection (if valid) > Profile company > LocalStorage pinned > First available
         const savedId = localStorage.getItem('asiste360_pinned_company');
-        const finalId = profile.company_id || (savedId && companiesData.find(c => c.id === savedId) ? savedId : companiesData[0].id);
+        
+        let finalId = selectedCompanyId;
+        
+        // If current selection is no longer in the list or is null, recalculate
+        if (!finalId || !companiesData.find(c => c.id === finalId)) {
+          finalId = profile.company_id || (savedId && companiesData.find(c => c.id === savedId) ? savedId : companiesData[0].id);
+        }
 
         setSelectedCompanyId(finalId);
       }
@@ -337,7 +343,7 @@ function App() {
                 onSave={() => userProfile?.national_id && fetchData(userProfile.national_id)}
               />
             ) : activeTab === 'branches' && userProfile?.role === 'superadmin' ? (
-              <BranchManagement />
+              <BranchManagement onSave={() => userProfile?.national_id && fetchData(userProfile.national_id)} />
             ) : activeTab === 'admins' && userProfile?.role === 'superadmin' ? (
               <AdminManagement />
             ) : activeTab === 'organizations' && userProfile?.role === 'superadmin' ? (

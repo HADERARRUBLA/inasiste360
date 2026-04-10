@@ -24,7 +24,11 @@ const dayNames: { [key: string]: string } = {
     sun: 'Domingo',
 };
 
-export const BranchManagement: React.FC = () => {
+interface BranchManagementProps {
+    onSave?: () => void;
+}
+
+export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) => {
     const [branches, setBranches] = useState<any[]>([]);
     const [organizations, setOrganizations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -132,6 +136,8 @@ export const BranchManagement: React.FC = () => {
             setEditingId(null);
             setFormData({ name: '', address: '', lat_long: '', radius_limit: 100, organization_id: '', work_schedule: { ...DEFAULT_SCHEDULE } as any });
             fetchBranches();
+            if (onSave) onSave();
+
         } catch (err: any) {
             setStatus({ type: 'error', msg: 'Error al guardar: ' + err.message });
         }
@@ -156,6 +162,8 @@ export const BranchManagement: React.FC = () => {
             const { error } = await supabase.from('InA_companies').delete().eq('id', id);
             if (error) throw error;
             fetchBranches();
+            if (onSave) onSave();
+
         } catch (err: any) {
             alert('Error al eliminar: ' + err.message);
         }
