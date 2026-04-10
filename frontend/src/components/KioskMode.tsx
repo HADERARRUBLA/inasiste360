@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useGeofencing } from '../hooks/useGeofencing';
-import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2 } from 'lucide-react';
+import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2, Timer } from 'lucide-react';
 import Webcam from 'react-webcam';
+import { EventType } from '../types';
 
 interface KioskModeProps {
     companyId: string;
@@ -13,16 +14,77 @@ interface KioskModeProps {
     companyName?: string;
 }
 
+interface KioskUser {
+  id: string;
+  full_name: string;
+  pin_code: string;
+  company_id: string;
+  profile_photo?: string | null;
+  face_vector?: number[] | null;
+}
+
+interface LastEntry {
+  event_type: EventType;
+  created_at: string;
+}
+
 export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, onSuccess, onBack }) => {
     const { isLoading, isInside, distance, currentLocation, accuracy, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
     const [pin, setPin] = useState('');
     const [step, setStep] = useState<'pin' | 'action' | 'face'>('pin');
     const [isCameraActive, setIsCameraActive] = useState(false);
-    const [currentUser, setCurrentUser] = useState<any>(null);
-    const [lastEntry, setLastEntry] = useState<any>(null);
-    const [selectedType, setSelectedType] = useState<any>(null);
+    const [currentUser, setCurrentUser] = useState<KioskUser | null>(null);
+    const [lastEntry, setLastEntry] = useState<LastEntry | null>(null);
+    const [selectedType, setSelectedType] = useState<EventType | null>(null);
     const [status, setStatus] = useState<{ type: 'success' | 'error' | 'loading', msg: string } | null>(null);
+    const [countdown, setCountdown] = useState<number | null>(null);
+    
     const webcamRef = useRef<Webcam>(null);
+    const inactivityTimerRef = useRef<number | null>(null);
+    const countdownRef = useRef<number | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+
+    const startInactivityTimer = () => {
+        cancelInactivityTimer();
+        inactivityTimerRef.current = window.setTimeout(() => {
+            let count = 10;
+            setCountdown(count);
+            countdownRef.current = window.setInterval(() => {
+                count -= 1;
+                if (count <= 0) {
+                    resetKiosk();
+                    cancelInactivityTimer();
+                } else {
+                    setCountdown(count);
+                }
+            }, 1000) as unknown as number;
+        }, 50000); // 50s before countdown
+    };
+
+    const cancelInactivityTimer = () => {
+        if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current);
+        if (countdownRef.current) window.clearInterval(countdownRef.current);
+        inactivityTimerRef.current = null;
+        countdownRef.current = null;
+        setCountdown(null);
+    };
+
+    React.useEffect(() => {
+        return () => {
+            cancelInactivityTimer();
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => t.stop());
+            }
+        };
+    }, []);
+
+    // Capture stream for proper cleanup
+    React.useEffect(() => {
+        const video = webcamRef.current?.video;
+        if (video?.srcObject instanceof MediaStream) {
+            streamRef.current = video.srcObject;
+        }
+    }, [isCameraActive]);
 
     const handlePinSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -56,14 +118,17 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setLastEntry(entry);
         setStep('action');
         setStatus(null);
+        startInactivityTimer();
     };
 
-    const handleActionSelect = (type: any) => {
+    const handleActionSelect = (type: EventType) => {
+        cancelInactivityTimer();
         setSelectedType(type);
         // Only 'in' and 'out' require photo evidence
         if (type === 'in' || type === 'out') {
             setStep('face');
             setIsCameraActive(true);
+            startInactivityTimer();
         } else {
             registerEntry(type, null);
         }
@@ -71,6 +136,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
     const handleFaceVerify = async () => {
         if (!webcamRef.current) return;
+        cancelInactivityTimer();
         setStatus({ type: 'loading', msg: 'Capturando evidencia...' });
         const imageSrc = webcamRef.current.getScreenshot();
 
@@ -145,6 +211,10 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     };
 
     const resetKiosk = () => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
         setPin('');
         setStep('pin');
         setIsCameraActive(false);
@@ -152,6 +222,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setLastEntry(null);
         setSelectedType(null);
         setStatus(null);
+        cancelInactivityTimer();
     };
 
     if (isLoading && step === 'pin') {
@@ -176,6 +247,15 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
     return (
         <div className="max-w-md mx-auto relative animate-in zoom-in-95 duration-500">
+            {countdown !== null && (
+                <div 
+                    onClick={() => { cancelInactivityTimer(); startInactivityTimer(); }}
+                    className="absolute -top-12 left-0 right-0 bg-red-600 text-white py-2 px-4 rounded-xl text-center text-xs font-black animate-pulse cursor-pointer z-[60] flex items-center justify-center gap-2"
+                >
+                    <Timer className="w-4 h-4" />
+                    ⏱ Sesión expira en {countdown}s — toca para continuar
+                </div>
+            )}
             {targetLocation === null && (
                 <div className="mb-6 p-4 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-sm border border-amber-500/20 z-50 relative">
                     <AlertCircle className="w-5 h-5 shrink-0" />
@@ -262,14 +342,23 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                 ) : step === 'action' ? (
                     <div className="space-y-6 animate-in slide-in-from-right-8 duration-500">
                         <div className="flex items-center justify-between">
-                            <button onClick={resetKiosk} className="p-2 hover:bg-muted rounded-full transition-all text-muted-foreground">
-                                <ArrowLeft className="w-5 h-5" />
+                            <button 
+                                onClick={() => {
+                                    setStep('pin');
+                                    setCurrentUser(null);
+                                    setLastEntry(null);
+                                    setPin('');
+                                    cancelInactivityTimer();
+                                }} 
+                                className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
+                            >
+                                <ArrowLeft className="w-4 h-4" /> Cambiar empleado
                             </button>
                             <div className="text-center">
                                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">Colaborador</p>
-                                <p className="font-black text-primary text-lg">{currentUser.full_name}</p>
+                                <p className="font-black text-primary text-lg">{currentUser?.full_name}</p>
                             </div>
-                            <div className="w-9" />
+                            <div className="w-24" />
                         </div>
 
                         <div className="grid grid-cols-1 gap-3">
@@ -332,14 +421,22 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                 ) : (
                     <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500">
                         <div className="flex items-center justify-between">
-                            <button onClick={() => setStep('action')} className="p-2 hover:bg-muted rounded-full transition-all text-muted-foreground">
-                                <ArrowLeft className="w-5 h-5" />
+                            <button 
+                                onClick={() => {
+                                    setStep('action');
+                                    setSelectedType(null);
+                                    setIsCameraActive(false);
+                                    startInactivityTimer();
+                                }} 
+                                className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
+                            >
+                                <ArrowLeft className="w-4 h-4" /> Cambiar acción
                             </button>
                             <div className="text-center">
                                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Evidencia Fotográfica</p>
-                                <p className="font-black text-primary">{getEventLabel(selectedType)}</p>
+                                <p className="font-black text-primary">{selectedType ? getEventLabel(selectedType) : ''}</p>
                             </div>
-                            <div className="w-9" />
+                            <div className="w-24" />
                         </div>
 
                         <div className="relative rounded-[2rem] overflow-hidden border-4 border-primary/20 aspect-video bg-black shadow-inner">

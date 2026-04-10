@@ -103,7 +103,11 @@ function App() {
 
           // Persistence logic: prioritize pinned company for this device
           const savedId = localStorage.getItem('asiste360_pinned_company');
-          if (savedId && data.find(c => c.id === savedId)) {
+          const savedKioskId = localStorage.getItem('asiste360_kiosk_company');
+
+          if (savedKioskId && data.find(c => c.id === savedKioskId)) {
+            setSelectedCompanyId(savedKioskId);
+          } else if (savedId && data.find(c => c.id === savedId)) {
             setSelectedCompanyId(savedId);
           } else {
             setSelectedCompanyId(data[0].id);
@@ -130,6 +134,11 @@ function App() {
     setIsAuthenticated(false);
     setUserProfile(null);
     setLoginData({ id: '', pin: '' });
+  };
+
+  const enterKioskMode = () => {
+    localStorage.setItem('asiste360_kiosk_company', selectedCompanyId ?? '');
+    setIsKiosk(true);
   };
 
   if (isKiosk) {
@@ -203,7 +212,7 @@ function App() {
             </button>
 
             <button
-              onClick={() => setIsKiosk(true)}
+              onClick={enterKioskMode}
               className="w-full flex items-center justify-center gap-2 text-xs font-black text-primary uppercase tracking-widest pt-4 border-t border-muted/50"
             >
               <LogIn className="w-4 h-4" /> Ir a Quiosco Biométrico
@@ -244,7 +253,7 @@ function App() {
             </div>
           )}
           <button
-            onClick={() => setIsKiosk(true)}
+            onClick={enterKioskMode}
             className="bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-white px-6 py-2.5 text-sm font-bold rounded-xl border transition-all active:scale-95"
           >
             Modo Quiosco
