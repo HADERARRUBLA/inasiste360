@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   Fingerprint,
   Calculator,
-  ScanFace,
   Building2,
   FileSpreadsheet,
   MapPinned
@@ -62,6 +61,50 @@ const Logo = ({ size = "base" }: { size?: "base" | "large" }) => {
   );
 };
 
+// Malla de puntos de referencia facial (estilo landmarks de face-api.js) — rostro humano
+// estilizado, sin depender de ninguna imagen externa.
+const FACE_LANDMARKS: [number, number][] = [
+  // Contorno de la mandíbula
+  [70, 150], [74, 180], [85, 210], [102, 240], [125, 265], [150, 278], [175, 265], [198, 240], [215, 210], [226, 180], [230, 150],
+  // Cejas
+  [100, 120], [118, 108], [136, 113], [164, 113], [182, 108], [200, 120],
+  // Ojos
+  [102, 143], [115, 136], [128, 143], [115, 150], [172, 143], [185, 136], [198, 143], [185, 150],
+  // Nariz
+  [150, 140], [146, 168], [150, 188], [154, 168],
+  // Boca
+  [128, 222], [150, 215], [172, 222], [150, 232],
+];
+
+const FaceScanEmblem = () => (
+  <svg viewBox="0 0 300 300" className="w-2/3 h-2/3 relative z-10" fill="none" aria-hidden="true">
+    <motion.path
+      d="M70 150 C68 95 100 55 150 55 C200 55 232 95 230 150 C230 180 226 180 215 210 C198 240 175 265 150 278 C125 265 102 240 85 210 C74 180 70 180 70 150 Z"
+      stroke="#b1c5ff" strokeWidth="1.5" strokeOpacity="0.5"
+      initial={{ pathLength: 0, opacity: 0 }}
+      animate={{ pathLength: 1, opacity: 1 }}
+      transition={{ duration: 2, ease: 'easeInOut' }}
+    />
+    <path d="M100 120 Q118 106 136 113" stroke="#b1c5ff" strokeWidth="1.3" strokeOpacity="0.4" />
+    <path d="M164 113 Q182 106 200 120" stroke="#b1c5ff" strokeWidth="1.3" strokeOpacity="0.4" />
+    <ellipse cx="115" cy="143" rx="15" ry="8" stroke="#b1c5ff" strokeWidth="1.2" strokeOpacity="0.55" />
+    <ellipse cx="185" cy="143" rx="15" ry="8" stroke="#b1c5ff" strokeWidth="1.2" strokeOpacity="0.55" />
+    <circle cx="115" cy="143" r="2" fill="#b1c5ff" fillOpacity="0.7" />
+    <circle cx="185" cy="143" r="2" fill="#b1c5ff" fillOpacity="0.7" />
+    <path d="M150 140 L146 168 Q150 172 154 168 L150 140" stroke="#b1c5ff" strokeWidth="1.2" strokeOpacity="0.4" />
+    <path d="M126 220 Q150 236 174 220" stroke="#b1c5ff" strokeWidth="1.5" strokeOpacity="0.55" />
+    {FACE_LANDMARKS.map(([x, y], i) => (
+      <motion.circle
+        key={i}
+        cx={x} cy={y} r="2.2"
+        fill="#b1c5ff"
+        animate={{ opacity: [0.25, 1, 0.25] }}
+        transition={{ duration: 2.2, repeat: Infinity, delay: (i % 12) * 0.12, ease: 'easeInOut' }}
+      />
+    ))}
+  </svg>
+);
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
   const [view, setView] = useState<View>('landing');
 
@@ -82,24 +125,29 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
             animate={{ scale: [1, 1.05, 1] }}
             transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           >
-            <div className="relative w-32 h-32 md:w-36 md:h-36">
+            <div className="relative w-24 h-24 md:w-28 md:h-28">
               <motion.div
-                className="absolute -inset-2 rounded-full bg-exec-primary/25 blur-xl"
-                animate={{ opacity: [0.3, 0.65, 0.3], scale: [0.92, 1.08, 0.92] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute -inset-2 bg-exec-primary/25 blur-xl"
+                style={{ clipPath: 'polygon(50% 0%, 92% 16%, 92% 52%, 76% 84%, 50% 100%, 24% 84%, 8% 52%, 8% 16%)' }}
+                animate={{ opacity: [0.3, 0.65, 0.3] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
               />
-              <div className="absolute inset-3 bg-white/15 backdrop-blur-sm rounded-full z-0 border border-white/20 shadow-xl"></div>
-              <motion.div
-                className="absolute inset-[-6%] border-t-2 border-exec-primary/50 rounded-full"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
-              />
-              <motion.div
-                className="absolute inset-4 border-b-2 border-exec-primary/30 rounded-full"
-                animate={{ rotate: -360 }}
-                transition={{ duration: 3.5, repeat: Infinity, ease: "linear" }}
-              />
-              <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
+              <div
+                className="absolute inset-0 bg-white/15 backdrop-blur-sm border border-white/20 shadow-xl overflow-hidden"
+                style={{ clipPath: 'polygon(50% 2%, 91% 17%, 91% 51%, 77% 82%, 50% 98%, 23% 82%, 9% 51%, 9% 17%)' }}
+              >
+                <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
+              </div>
+              <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
+                <polygon points="50,2 91,17 91,51 77,82 50,98 23,82 9,51 9,17" fill="none" stroke="#b1c5ff" strokeWidth="1" strokeOpacity="0.25" />
+                <motion.polygon
+                  points="50,2 91,17 91,51 77,82 50,98 23,82 9,51 9,17"
+                  fill="none" stroke="#b1c5ff" strokeWidth="2"
+                  initial={{ pathLength: 0, opacity: 0.4 }}
+                  animate={{ pathLength: [0, 1], opacity: [0.4, 0.9, 0.4] }}
+                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+                />
+              </svg>
             </div>
           </motion.div>
           <div className="hidden lg:flex items-center gap-10 ml-4">
@@ -155,14 +203,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
           <h1 className="text-5xl md:text-[5.5rem] lg:text-[6.5rem] font-black tracking-tight leading-[0.9] text-exec-on-surface">
             Mientras lees esto, el <span className="text-exec-primary">5%</span> de tu nómina podría ser <span className="text-exec-primary/60 italic">tiempo no laborado.</span>
           </h1>
-          <p className="text-2xl md:text-3xl text-exec-on-variant font-medium max-w-2xl leading-relaxed">Detén las fugas de nómina hoy con IA Biométrica y Geocercas de precisión quirúrgica.</p>
-          <p className="text-base md:text-lg text-exec-primary/80 font-bold max-w-2xl leading-relaxed">
+          <p className="text-xl md:text-2xl text-exec-on-variant font-medium max-w-2xl leading-relaxed">Detén las fugas de nómina hoy con IA Biométrica y Geocercas de precisión quirúrgica.</p>
+          <p className="text-sm md:text-base text-exec-primary/80 font-bold max-w-2xl leading-relaxed">
             Ejemplo: en una empresa de 50 colaboradores, eso representa cerca de <span className="text-exec-primary font-black">$75.000.000 COP al año</span>. Calcula el número exacto para tu empresa abajo.
           </p>
           <div className="flex flex-col sm:flex-row items-center gap-6 pt-4 justify-center lg:justify-start">
-            <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full sm:w-auto px-14 py-7 bg-[#0047ab] text-white rounded-md exec-metallic-edge font-bold uppercase tracking-widest text-base hover:brightness-110 active:scale-[0.98] transition-all shadow-xl">Agenda tu Demo Gratuita</button>
-            <button onClick={() => setView('roi')} className="w-full sm:w-auto px-14 py-7 bg-exec-high border border-exec-outline/30 text-exec-on-surface rounded-md font-bold uppercase tracking-widest text-base hover:bg-exec-highest transition-all backdrop-blur-md flex items-center justify-center gap-3">
-              <Calculator className="w-5 h-5 text-exec-primary" /> Ver mi Ahorro Estimado
+            <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full sm:w-auto px-12 py-6 bg-[#0047ab] text-white rounded-md exec-metallic-edge font-bold uppercase tracking-widest text-sm hover:brightness-110 active:scale-[0.98] transition-all shadow-xl">Agenda tu Demo Gratuita</button>
+            <button onClick={() => setView('roi')} className="w-full sm:w-auto px-12 py-6 bg-exec-high border border-exec-outline/30 text-exec-on-surface rounded-md font-bold uppercase tracking-widest text-sm hover:bg-exec-highest transition-all backdrop-blur-md flex items-center justify-center gap-3">
+              <Calculator className="w-4 h-4 text-exec-primary" /> Ver mi Ahorro Estimado
             </button>
           </div>
           <div className="flex items-center gap-3 pt-10">
@@ -172,7 +220,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
               <span className="text-[10px] font-bold text-exec-on-variant/40 uppercase tracking-widest">Protegiendo la nómina de equipos en manufactura, retail y logística en Colombia.</span>
           </div>
         </motion.div>
-        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1 }} className="flex-1 relative w-full aspect-square max-w-[700px] flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1 }} className="flex-1 relative w-full aspect-square max-w-[650px] flex items-center justify-center">
           <div className="relative w-full h-full rounded-2xl border border-white/5 bg-exec-low/40 backdrop-blur-2xl overflow-hidden shadow-2xl p-4">
             <div className="absolute inset-0 exec-point-cloud opacity-30"></div>
 
@@ -192,7 +240,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                   transition={{ duration: 10 + ring * 4, repeat: Infinity, ease: 'linear' }}
                 />
               ))}
-              <ScanFace className="w-1/3 h-1/3 text-exec-primary relative z-10 drop-shadow-[0_0_25px_rgba(177,197,255,0.5)]" strokeWidth={1} />
+              <FaceScanEmblem />
             </div>
 
             <div className="absolute top-10 right-10 p-4 bg-exec-bg/80 backdrop-blur-xl border border-white/10 rounded-lg exec-metallic-edge w-56 shadow-xl">
@@ -260,39 +308,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
           </header>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
             <div className="lg:col-span-4 space-y-8">
-              <div className="exec-glass-panel p-10 rounded-lg space-y-10">
+              <div className="exec-glass-panel p-10 rounded-lg space-y-12">
                 <div>
-                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">COLABORADORES</label><span className="text-2xl font-black text-white">{personnel.toLocaleString()}</span></div>
+                  <div className="mb-5 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">COLABORADORES</label><span className="text-2xl font-black text-white">{personnel.toLocaleString()}</span></div>
                   <input type="range" min="5" max="10000" value={personnel} onChange={(e) => setPersonnel(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
                 </div>
                 <div>
-                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">SEDES</label><span className="text-2xl font-black text-white">{sedes}</span></div>
+                  <div className="mb-5 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">SEDES</label><span className="text-2xl font-black text-white">{sedes}</span></div>
                   <input type="range" min="1" max="50" value={sedes} onChange={(e) => setSedes(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
                 </div>
                 <div>
-                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">% DE FRAUDE / TIEMPO PERDIDO</label><span className="text-2xl font-black text-white">{fraudRate}%</span></div>
+                  <div className="mb-5 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">% DE FRAUDE / TIEMPO PERDIDO</label><span className="text-2xl font-black text-white">{fraudRate}%</span></div>
                   <input type="range" min="1" max="15" step="0.5" value={fraudRate} onChange={(e) => setFraudRate(parseFloat(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
                 </div>
                 <div>
-                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">HORAS/MES CALCULANDO NÓMINA A MANO</label><span className="text-2xl font-black text-white">{payrollHours}h</span></div>
+                  <div className="mb-5 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">HORAS/MES CALCULANDO NÓMINA A MANO</label><span className="text-2xl font-black text-white">{payrollHours}h</span></div>
                   <input type="range" min="2" max="80" value={payrollHours} onChange={(e) => setPayrollHours(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
                 </div>
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+              </div>
+
+              <div className="exec-glass-panel p-10 rounded-lg space-y-6">
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white">VALORES DE REFERENCIA (EDITABLES)</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Salario mínimo</label>
-                    <input type="number" value={minWage} onChange={(e) => setMinWage(parseInt(e.target.value) || 0)} className="w-full bg-slate-900/50 border border-white/10 rounded px-3 py-2 text-sm font-bold text-white outline-none focus:border-exec-primary/50" />
+                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Salario mínimo mensual</label>
+                    <input
+                      type="number"
+                      value={minWage}
+                      onChange={(e) => setMinWage(parseInt(e.target.value) || 0)}
+                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Aux. transporte</label>
-                    <input type="number" value={transportSubsidy} onChange={(e) => setTransportSubsidy(parseInt(e.target.value) || 0)} className="w-full bg-slate-900/50 border border-white/10 rounded px-3 py-2 text-sm font-bold text-white outline-none focus:border-exec-primary/50" />
+                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Auxilio de transporte</label>
+                    <input
+                      type="number"
+                      value={transportSubsidy}
+                      onChange={(e) => setTransportSubsidy(parseInt(e.target.value) || 0)}
+                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
                   </div>
-                  <div className="space-y-2 col-span-2">
+                  <div className="space-y-2 sm:col-span-2">
                     <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Costo hora administrativa (COP)</label>
-                    <input type="number" value={adminHourCost} onChange={(e) => setAdminHourCost(parseInt(e.target.value) || 0)} className="w-full bg-slate-900/50 border border-white/10 rounded px-3 py-2 text-sm font-bold text-white outline-none focus:border-exec-primary/50" />
+                    <input
+                      type="number"
+                      value={adminHourCost}
+                      onChange={(e) => setAdminHourCost(parseInt(e.target.value) || 0)}
+                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
                   </div>
                 </div>
-                <p className="text-[9px] text-slate-500 italic leading-relaxed">*Ajusta el salario mínimo y el auxilio de transporte al valor vigente en tu país/año. Los valores aquí son solo un punto de partida editable.</p>
+                <p className="text-[9px] text-slate-500 italic leading-relaxed">*Ajusta el salario mínimo y el auxilio de transporte al valor vigente en tu país/año — son solo un punto de partida editable, haz clic y escribe directamente.</p>
               </div>
+
               <div className="space-y-6">
                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white">PROTOCOLO DE OPTIMIZACIÓN</h3>
                  <div className="space-y-4">{['Eliminación de marcajes manuales', 'Verificación biométrica en tiempo real', 'Cálculo de nómina 100% automático'].map((text, i) => (

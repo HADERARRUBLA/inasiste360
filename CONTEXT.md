@@ -281,6 +281,13 @@ El usuario revisó capturas de pantalla reales (landing, Comando, Motor de ROI) 
 
 **Nota sobre verificación:** durante las pruebas, la navegación por pestañas de la landing (Inteligencia/Comando/Motor de ROI, controlada por `AnimatePresence` de `motion/react`) se veía "atascada" en algunas pruebas automatizadas — se determinó que es porque el entorno de pruebas de esta sesión no compone frames visualmente (mismo problema que impidió tomar capturas de pantalla), por lo que las animaciones basadas en `requestAnimationFrame` nunca completan su callback. No se tocó el mecanismo de `AnimatePresence` en sí. El usuario ya había confirmado visualmente que las 3 vistas funcionan correctamente en su propio navegador antes de esta ronda de cambios.
 
+### Ronda 3: correcciones tras revisión visual real del usuario (capturas de pantalla)
+El usuario probó en su propio navegador y encontró 3 problemas reales que las pruebas automatizadas no habían detectado (limitación del entorno de pruebas para juicio visual fino):
+- **Hero sobredimensionado**: el aumento de tamaño de texto/botones/panel de la ronda 2 causó que la página se viera "zoomeada", necesitando que el usuario ajustara el zoom del navegador para verla bien. Revertido a los tamaños originales (`text-xl md:text-2xl` subtítulo, botones `px-12 py-6 text-sm`, panel `max-w-[650px]`).
+- **Rostro perdido**: el ícono `ScanFace` de lucide-react se veía como un emoji/cartoon, no como un rostro humano siendo escaneado. Reemplazado por `FaceScanEmblem`, un SVG propio con malla de 33 puntos de referencia facial (contorno de mandíbula, cejas, ojos, nariz, boca — al estilo de los landmarks reales que detecta `face-api.js`), con animación de pulso escalonada por punto.
+- **Motor de ROI apretado + inputs con flechitas poco prácticos**: se separaron los 4 sliders y los 3 inputs monetarios en dos tarjetas `exec-glass-panel` distintas con más espacio. A los inputs numéricos (salario mínimo, auxilio transporte, costo hora administrativa) se les quitaron los spinners nativos (`[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none`) para que se sientan como campos de texto donde se escribe directo.
+- **Logo del navbar**: tras dar 4 opciones de dirección visual, el usuario eligió "marco tipo escudo/hexágono" — el logo ahora está recortado (`clip-path` CSS) dentro de una silueta de escudo, con un halo pulsante del mismo shape detrás y un contorno animado (`pathLength` de framer-motion) trazándose alrededor del perímetro. Conecta visualmente con el mensaje de "proteger tu nómina".
+
 ---
 
 ## 10. Cómo correr el proyecto localmente
