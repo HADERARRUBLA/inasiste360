@@ -77,7 +77,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
       <nav className={`fixed top-0 w-full z-50 transition-all duration-500 px-8 h-32 flex justify-between items-center ${isScrolled ? 'bg-exec-bg/80 backdrop-blur-xl border-b border-exec-outline/15 shadow-2xl' : 'bg-transparent'}`}>
         <div className="flex items-center gap-10">
           <div className="flex items-center cursor-pointer" onClick={() => setView('landing')}>
-            <div className="relative w-24 h-24 md:w-28 md:h-28">
+            <div className="relative w-28 h-28 md:w-36 md:h-36">
               {/* El logo (aro + glow) flota en Y; la sombra abajo NO se mueve, solo se
                   encoge/desvanece en sincronía para dar la ilusión de levitación.
                   Un punto le da la vuelta completa al aro — el "360" de la marca. */}
