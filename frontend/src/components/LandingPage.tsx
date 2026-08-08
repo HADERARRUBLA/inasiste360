@@ -18,7 +18,8 @@ import {
   Calculator,
   Building2,
   FileSpreadsheet,
-  MapPinned
+  MapPinned,
+  ScanFace
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -60,50 +61,6 @@ const Logo = ({ size = "base" }: { size?: "base" | "large" }) => {
     </div>
   );
 };
-
-// Malla de puntos de referencia facial (estilo landmarks de face-api.js) — rostro humano
-// estilizado, sin depender de ninguna imagen externa.
-const FACE_LANDMARKS: [number, number][] = [
-  // Contorno de la mandíbula
-  [70, 150], [74, 180], [85, 210], [102, 240], [125, 265], [150, 278], [175, 265], [198, 240], [215, 210], [226, 180], [230, 150],
-  // Cejas
-  [100, 120], [118, 108], [136, 113], [164, 113], [182, 108], [200, 120],
-  // Ojos
-  [102, 143], [115, 136], [128, 143], [115, 150], [172, 143], [185, 136], [198, 143], [185, 150],
-  // Nariz
-  [150, 140], [146, 168], [150, 188], [154, 168],
-  // Boca
-  [128, 222], [150, 215], [172, 222], [150, 232],
-];
-
-const FaceScanEmblem = () => (
-  <svg viewBox="0 0 300 300" className="w-2/3 h-2/3 relative z-10" fill="none" aria-hidden="true">
-    <motion.path
-      d="M70 150 C68 95 100 55 150 55 C200 55 232 95 230 150 C230 180 226 180 215 210 C198 240 175 265 150 278 C125 265 102 240 85 210 C74 180 70 180 70 150 Z"
-      stroke="#b1c5ff" strokeWidth="1.5" strokeOpacity="0.5"
-      initial={{ pathLength: 0, opacity: 0 }}
-      animate={{ pathLength: 1, opacity: 1 }}
-      transition={{ duration: 2, ease: 'easeInOut' }}
-    />
-    <path d="M100 120 Q118 106 136 113" stroke="#b1c5ff" strokeWidth="1.3" strokeOpacity="0.4" />
-    <path d="M164 113 Q182 106 200 120" stroke="#b1c5ff" strokeWidth="1.3" strokeOpacity="0.4" />
-    <ellipse cx="115" cy="143" rx="15" ry="8" stroke="#b1c5ff" strokeWidth="1.2" strokeOpacity="0.55" />
-    <ellipse cx="185" cy="143" rx="15" ry="8" stroke="#b1c5ff" strokeWidth="1.2" strokeOpacity="0.55" />
-    <circle cx="115" cy="143" r="2" fill="#b1c5ff" fillOpacity="0.7" />
-    <circle cx="185" cy="143" r="2" fill="#b1c5ff" fillOpacity="0.7" />
-    <path d="M150 140 L146 168 Q150 172 154 168 L150 140" stroke="#b1c5ff" strokeWidth="1.2" strokeOpacity="0.4" />
-    <path d="M126 220 Q150 236 174 220" stroke="#b1c5ff" strokeWidth="1.5" strokeOpacity="0.55" />
-    {FACE_LANDMARKS.map(([x, y], i) => (
-      <motion.circle
-        key={i}
-        cx={x} cy={y} r="2.2"
-        fill="#b1c5ff"
-        animate={{ opacity: [0.25, 1, 0.25] }}
-        transition={{ duration: 2.2, repeat: Infinity, delay: (i % 12) * 0.12, ease: 'easeInOut' }}
-      />
-    ))}
-  </svg>
-);
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
   const [view, setView] = useState<View>('landing');
@@ -224,24 +181,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
           <div className="relative w-full h-full rounded-2xl border border-white/5 bg-exec-low/40 backdrop-blur-2xl overflow-hidden shadow-2xl p-4">
             <div className="absolute inset-0 exec-point-cloud opacity-30"></div>
 
-            {/* Emblema central de escaneo biométrico (sin dependencias externas) */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <motion.div
-                className="absolute w-2/3 aspect-square rounded-full bg-exec-primary/10 blur-2xl"
-                animate={{ opacity: [0.3, 0.55, 0.3], scale: [0.95, 1.05, 0.95] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              />
-              {[1, 2, 3].map(ring => (
-                <motion.div
-                  key={ring}
-                  className="absolute rounded-full border border-exec-primary/20"
-                  style={{ width: `${ring * 22}%`, height: `${ring * 22}%` }}
-                  animate={{ rotate: ring % 2 === 0 ? -360 : 360 }}
-                  transition={{ duration: 10 + ring * 4, repeat: Infinity, ease: 'linear' }}
-                />
-              ))}
-              <FaceScanEmblem />
-            </div>
+            {/* Rostro escaneado (asset propio en /public, ya no depende de una URL externa) */}
+            <img src="/face_scan_hero.png" alt="Rostro escaneado por IA biométrica" className="w-full h-full object-contain mix-blend-screen opacity-80" />
 
             <div className="absolute top-10 right-10 p-4 bg-exec-bg/80 backdrop-blur-xl border border-white/10 rounded-lg exec-metallic-edge w-56 shadow-xl">
                <div className="flex justify-between items-start mb-4"><span className="text-[10px] uppercase tracking-tighter text-exec-primary font-bold">PRECISION DEL NODO</span><span className="text-[10px] text-green-400 font-mono">99.9%</span></div>
@@ -266,11 +207,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
     const [personnel, setPersonnel] = useState(1250);
     const [fraudRate, setFraudRate] = useState(4.5);
     const [sedes, setSedes] = useState(3);
-    const [minWage, setMinWage] = useState(1300000);
-    const [transportSubsidy, setTransportSubsidy] = useState(200000);
+    const [minWageInput, setMinWageInput] = useState('1300000');
+    const [transportSubsidyInput, setTransportSubsidyInput] = useState('200000');
     const [payrollHours, setPayrollHours] = useState(20);
-    const [adminHourCost, setAdminHourCost] = useState(25000);
+    const [adminHourCostInput, setAdminHourCostInput] = useState('25000');
     const [period, setPeriod] = useState<'monthly' | 'annual'>('annual');
+
+    // Los 3 campos de arriba se guardan como texto para que el usuario pueda
+    // borrar/escribir libremente sin que el valor "salte" a 0 a mitad de edición.
+    const minWage = parseInt(minWageInput) || 0;
+    const transportSubsidy = parseInt(transportSubsidyInput) || 0;
+    const adminHourCost = parseInt(adminHourCostInput) || 0;
 
     const avgMonthlyCost = minWage + transportSubsidy;
     const fraudSavingsAnnual = personnel * (fraudRate / 100) * 12 * avgMonthlyCost;
@@ -333,28 +280,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                   <div className="space-y-2">
                     <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Salario mínimo mensual</label>
                     <input
-                      type="number"
-                      value={minWage}
-                      onChange={(e) => setMinWage(parseInt(e.target.value) || 0)}
-                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      type="text"
+                      inputMode="numeric"
+                      value={minWageInput}
+                      onChange={(e) => setMinWageInput(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Auxilio de transporte</label>
                     <input
-                      type="number"
-                      value={transportSubsidy}
-                      onChange={(e) => setTransportSubsidy(parseInt(e.target.value) || 0)}
-                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      type="text"
+                      inputMode="numeric"
+                      value={transportSubsidyInput}
+                      onChange={(e) => setTransportSubsidyInput(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50"
                     />
                   </div>
                   <div className="space-y-2 sm:col-span-2">
                     <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Costo hora administrativa (COP)</label>
                     <input
-                      type="number"
-                      value={adminHourCost}
-                      onChange={(e) => setAdminHourCost(parseInt(e.target.value) || 0)}
-                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      type="text"
+                      inputMode="numeric"
+                      value={adminHourCostInput}
+                      onChange={(e) => setAdminHourCostInput(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full bg-slate-900/50 border border-white/10 rounded-lg px-4 py-3 text-base font-bold text-white outline-none focus:border-exec-primary/50"
                     />
                   </div>
                 </div>
