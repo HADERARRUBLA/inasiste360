@@ -16,31 +16,26 @@ import { parseLatLng } from './utils/geoUtils';
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations'>('dashboard');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [loginData, setLoginData] = useState({ id: '', pin: '' });
+  const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [recoveryStatus, setRecoveryStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
   const currentCompany = useMemo(() =>
     companies.find(c => c.id === selectedCompanyId) || null
     , [companies, selectedCompanyId]);
 
-  const fetchData = async (identifier: string) => {
+  // Carga las sedes visibles para el perfil autenticado (RLS filtra automáticamente
+  // por organización si el rol no es superadmin) y fija la sede activa.
+  const loadCompaniesForProfile = async (profile: any) => {
     try {
-      const { data: profile } = await supabase
-        .from('InA_profiles')
-        .select('*')
-        .eq('national_id', identifier)
-        .maybeSingle();
-
-      if (!profile) {
-        setIsAuthenticated(false);
-        return;
-      }
-
       setUserProfile(profile);
 
       let query = supabase.from('InA_companies').select('*').order('name');
@@ -56,9 +51,9 @@ function App() {
 
         // Priority: Current selection (if valid) > Profile company > LocalStorage pinned > First available
         const savedId = localStorage.getItem('asiste360_pinned_company');
-        
+
         let finalId = selectedCompanyId;
-        
+
         // If current selection is no longer in the list or is null, recalculate
         if (!finalId || !companiesData.find(c => c.id === finalId)) {
           finalId = profile.company_id || (savedId && companiesData.find(c => c.id === savedId) ? savedId : companiesData[0].id);
@@ -71,24 +66,46 @@ function App() {
     }
   };
 
+  // Busca el perfil InA_profiles enlazado a la sesión de Supabase Auth activa
+  // (columna auth_user_id, ver migración 0001_secure_rls_and_kiosk_rpc.sql).
+  const loadOwnProfile = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setIsAuthenticated(false);
+      return;
+    }
+
+    const { data: profile, error } = await supabase
+      .from('InA_profiles')
+      .select('*')
+      .eq('auth_user_id', session.user.id)
+      .maybeSingle();
+
+    if (error || !profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) {
+      setIsAuthenticated(false);
+      await supabase.auth.signOut();
+      return;
+    }
+
+    setIsAuthenticated(true);
+    await loadCompaniesForProfile(profile);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
     try {
-      const { data: profile, error } = await supabase
-        .from('InA_profiles')
-        .select('*')
-        .eq('national_id', loginData.id)
-        .eq('pin_code', loginData.pin)
-        .maybeSingle();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginData.email,
+        password: loginData.password
+      });
 
-      if (error) throw error;
-      if (profile && (profile.role === 'admin' || profile.role === 'superadmin')) {
-        setIsAuthenticated(true);
-        fetchData(profile.national_id);
-      } else {
-        setLoginError('Credenciales inválidas o sin acceso administrativo.');
+      if (error) {
+        setLoginError('Credenciales inválidas.');
+        return;
       }
+
+      await loadOwnProfile();
     } catch (err: any) {
       setLoginError('Error de autenticación.');
     }
@@ -115,9 +132,26 @@ function App() {
         }
       } catch (err) {
         console.error('Error initializing app:', err);
+      } finally {
+        // Restaura sesión de Supabase Auth si existe (recarga de página, etc.)
+        await loadOwnProfile();
+        setAuthLoading(false);
       }
     };
     initApp();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+        return;
+      }
+      if (!session) {
+        setIsAuthenticated(false);
+        setUserProfile(null);
+      }
+    });
+
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
   const handleCompanyChange = (id: string) => {
@@ -130,16 +164,70 @@ function App() {
     return parseLatLng(currentCompany.lat_long);
   }, [currentCompany?.lat_long]);
 
-  const handleSignOut = () => {
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryStatus(null);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setRecoveryStatus({ type: 'error', msg: error.message });
+      return;
+    }
+    setRecoveryStatus({ type: 'success', msg: 'Contraseña actualizada. Ingresando...' });
+    setNewPassword('');
+    setTimeout(async () => {
+      setIsPasswordRecovery(false);
+      setShowLogin(false);
+      await loadOwnProfile();
+    }, 1200);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
     setIsAuthenticated(false);
     setUserProfile(null);
-    setLoginData({ id: '', pin: '' });
+    setLoginData({ email: '', password: '' });
   };
 
   const enterKioskMode = () => {
     localStorage.setItem('asiste360_kiosk_company', selectedCompanyId ?? '');
     setIsKiosk(true);
   };
+
+  if (isPasswordRecovery) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-primary/10 -z-10" />
+        <div className="w-full max-w-md space-y-8 animate-in fade-in zoom-in duration-500">
+          <div className="text-center space-y-2">
+            <p className="text-primary font-black text-xs uppercase tracking-[0.5em]">Define tu nueva contraseña</p>
+          </div>
+          <form onSubmit={handleSetNewPassword} className="bg-card border-2 p-10 rounded-[3rem] shadow-2xl space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-muted-foreground ml-2 tracking-widest">Nueva contraseña</label>
+              <input
+                required
+                minLength={6}
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                className="w-full px-6 py-4 bg-background border-2 border-muted rounded-2xl focus:border-primary outline-none font-bold transition-all"
+                placeholder="••••••••"
+                autoFocus
+              />
+            </div>
+            {recoveryStatus && (
+              <p className={`text-xs font-black uppercase p-4 rounded-xl ${recoveryStatus.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-500 bg-red-50'}`}>
+                {recoveryStatus.msg}
+              </p>
+            )}
+            <button type="submit" className="w-full py-5 bg-primary text-primary-foreground rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all">
+              Guardar contraseña
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (isKiosk) {
     let parsedSettings: any = {};
@@ -166,6 +254,14 @@ function App() {
         onSuccess={(uid, type) => { /* Registro exitoso */ }}
         onBack={() => setIsKiosk(false)}
       />
+    );
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
     );
   }
 
@@ -197,24 +293,25 @@ function App() {
 
           <form onSubmit={handleLogin} className="bg-card border-2 p-10 rounded-[3rem] shadow-2xl space-y-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-muted-foreground ml-2 tracking-widest">Identificador</label>
+              <label className="text-[10px] font-black uppercase text-muted-foreground ml-2 tracking-widest">Correo electrónico</label>
               <input
                 required
-                value={loginData.id}
-                onChange={e => setLoginData({ ...loginData, id: e.target.value })}
+                type="email"
+                value={loginData.email}
+                onChange={e => setLoginData({ ...loginData, email: e.target.value })}
                 className="w-full px-6 py-4 bg-background border-2 border-muted rounded-2xl focus:border-primary outline-none font-bold transition-all"
-                placeholder="ID de Administrador"
+                placeholder="admin@tuempresa.com"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-muted-foreground ml-2 tracking-widest">Clave de Acceso</label>
+              <label className="text-[10px] font-black uppercase text-muted-foreground ml-2 tracking-widest">Contraseña</label>
               <input
                 required
                 type="password"
-                value={loginData.pin}
-                onChange={e => setLoginData({ ...loginData, pin: e.target.value })}
-                className="w-full px-6 py-4 bg-background border-2 border-muted rounded-2xl focus:border-primary outline-none font-bold transition-all text-2xl tracking-[0.5em]"
-                placeholder="••••"
+                value={loginData.password}
+                onChange={e => setLoginData({ ...loginData, password: e.target.value })}
+                className="w-full px-6 py-4 bg-background border-2 border-muted rounded-2xl focus:border-primary outline-none font-bold transition-all"
+                placeholder="••••••••"
               />
             </div>
 
@@ -364,10 +461,10 @@ function App() {
             ) : activeTab === 'config' ? (
               <CompanySetup
                 companyId={selectedCompanyId}
-                onSave={() => userProfile?.national_id && fetchData(userProfile.national_id)}
+                onSave={() => userProfile && loadCompaniesForProfile(userProfile)}
               />
             ) : activeTab === 'branches' && userProfile?.role === 'superadmin' ? (
-              <BranchManagement onSave={() => userProfile?.national_id && fetchData(userProfile.national_id)} />
+              <BranchManagement onSave={() => userProfile && loadCompaniesForProfile(userProfile)} />
             ) : activeTab === 'admins' && userProfile?.role === 'superadmin' ? (
               <AdminManagement />
             ) : activeTab === 'organizations' && userProfile?.role === 'superadmin' ? (

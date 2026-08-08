@@ -5,7 +5,6 @@ import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Bu
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 import type { EventType, TimeEntryMetadata } from '../types';
-import { compareFaceVectors, euclideanDistance } from '../utils/biometricUtils';
 
 interface KioskModeProps {
     companyId: string;
@@ -20,10 +19,8 @@ interface KioskModeProps {
 interface KioskUser {
   id: string;
   full_name: string;
-  pin_code: string;
-  company_id: string;
   profile_photo?: string | null;
-  face_vector?: number[] | null;
+  has_face_vector: boolean;
 }
 
 interface LastEntry {
@@ -115,12 +112,10 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
         setStatus({ type: 'loading', msg: 'Verificando PIN...' });
 
-        const { data: user, error: userError } = await supabase
-            .from('InA_profiles')
-            .select('*')
-            .eq('company_id', companyId)
-            .eq('pin_code', pin)
-            .single();
+        const { data: users, error: userError } = await supabase
+            .rpc('kiosk_verify_pin', { p_company_id: companyId, p_pin_code: pin });
+
+        const user = users?.[0];
 
         if (userError || !user) {
             setStatus({ type: 'error', msg: 'PIN incorrecto o empleado no encontrado.' });
@@ -129,13 +124,9 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         }
 
         // Fetch last entry to determine state
-        const { data: entry } = await supabase
-            .from('InA_time_entries')
-            .select('event_type, created_at')
-            .eq('profile_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
+        const { data: entries } = await supabase
+            .rpc('kiosk_get_last_entry', { p_profile_id: user.id });
+        const entry = entries?.[0] ?? null;
 
         setCurrentUser(user);
         setLastEntry(entry);
@@ -173,12 +164,9 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         let isVerified = true;
         let biometricMatch: boolean | null = null;
         let biometricConfidence: number | null = null;
-        
 
-
-        if (biometricEnabled && isModelLoaded && currentUser?.face_vector && currentUser.face_vector.length > 0) {
+        if (biometricEnabled && isModelLoaded && currentUser?.has_face_vector) {
             try {
-
                 const img = new Image();
                 img.src = imageSrc;
                 await new Promise(resolve => img.onload = resolve);
@@ -191,25 +179,24 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                     .withFaceLandmarks()
                     .withFaceDescriptor();
 
-
-
                 if (detections) {
-
                     const capturedVector = Array.from(detections.descriptor);
-                    const result = compareFaceVectors(currentUser.face_vector, capturedVector);
-                    
-                    biometricMatch = result.match;
-                    biometricConfidence = result.confidence;
+                    // La comparación ocurre en el servidor (RPC kiosk_verify_face):
+                    // el vector facial almacenado nunca se envía al navegador.
+                    const { data: matchResult, error: matchError } = await supabase
+                        .rpc('kiosk_verify_face', {
+                            p_profile_id: currentUser.id,
+                            p_captured_vector: capturedVector
+                        })
+                        .single();
+
+                    if (matchError) throw matchError;
+
+                    biometricMatch = (matchResult as any)?.match ?? false;
+                    biometricConfidence = (matchResult as any)?.confidence ?? 0;
                     isVerified = biometricMatch;
-                    
-
-
                     // Si NO hay match, informamos pero permitimos el flujo (auditoría posterior)
-                    if (!biometricMatch) {
-
-                    }
                 } else {
-
                     setStatus({ type: 'error', msg: 'No se detectó rostro. Mira directo a la cámara e intenta de nuevo.' });
                     // No permitimos registrar si la biometría está activa y NO se detectó un rostro
                     return;
@@ -233,10 +220,6 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
         setStatus({ type: 'loading', msg: 'Registrando...' });
 
-        const now = new Date();
-        const nowISO = now.toISOString();
-        const localDate = now.toLocaleDateString('en-CA');
-
         const isReturn = ['breakfast', 'lunch', 'active_pause', 'other'].includes(lastEntry?.event_type);
         const eventLabel = isReturn
             ? `Regreso de ${getEventLabel(lastEntry.event_type)}`
@@ -253,21 +236,16 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             photo_evidence: photoBase64 || null
         };
 
-        const insertData = {
-            profile_id: currentUser.id,
-            company_id: companyId,
-            event_type: type,
-            date: localDate,
-            clock_in: nowISO,
-            clock_out: type === 'out' ? nowISO : null,
-            is_verified: isVerified,
-            location_snapshot: currentLocation
+        const { error } = await supabase.rpc('kiosk_register_entry', {
+            p_profile_id: currentUser.id,
+            p_company_id: companyId,
+            p_event_type: type,
+            p_is_verified: isVerified,
+            p_location: currentLocation
                 ? { lat: currentLocation.lat, lng: currentLocation.lng }
                 : null,
-            metadata
-        };
-
-        const { error } = await supabase.from('InA_time_entries').insert([insertData]);
+            p_metadata: metadata
+        });
 
         if (error) {
             setStatus({ type: 'error', msg: 'Error: ' + error.message });
