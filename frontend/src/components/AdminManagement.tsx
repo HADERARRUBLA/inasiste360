@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { UserPlus, ShieldCheck, Mail, Building2, X, Save, ShieldAlert, Key, MapPin } from 'lucide-react';
 import type { UserRole, Company } from '../types';
+import { showToast } from '../lib/toastStore';
 
 export const AdminManagement: React.FC = () => {
     const [admins, setAdmins] = useState<any[]>([]);
@@ -147,13 +148,13 @@ export const AdminManagement: React.FC = () => {
             if (error) throw error;
             fetchData();
         } catch (err: any) {
-            alert('Error al eliminar: ' + err.message);
+            showToast('Error al eliminar: ' + err.message, 'error');
         }
     };
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Gestión de Administradores</h2>
                     <p className="text-muted-foreground font-bold text-sm">Control de accesos y delegación por sede.</p>
@@ -296,6 +297,7 @@ export const AdminManagement: React.FC = () => {
             )}
 
             <div className="bg-card border rounded-[2.5rem] overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                         <tr>
@@ -340,6 +342,7 @@ export const AdminManagement: React.FC = () => {
                         ))}
                     </tbody>
                 </table>
+              </div>
             </div>
         </div>
     );

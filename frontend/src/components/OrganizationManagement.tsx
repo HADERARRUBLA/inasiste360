@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Building2, Plus, Search, Trash2, Edit2, CheckCircle, XCircle } from 'lucide-react';
 import type { Organization } from '../types';
+import { showToast } from '../lib/toastStore';
 
 export const OrganizationManagement: React.FC = () => {
     const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -46,7 +47,7 @@ export const OrganizationManagement: React.FC = () => {
             setFormData({ name: '', nit: '', is_active: true });
             fetchOrganizations();
         } catch (err: any) {
-            alert('Error: ' + err.message);
+            showToast('Error: ' + err.message, 'error');
         }
     };
 
@@ -57,14 +58,14 @@ export const OrganizationManagement: React.FC = () => {
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Gestión de Empresas (SaaS)</h2>
-                    <p className="text-muted-foreground font-bold text-sm text-[#00E5FF]">Administración de inquilinos y clientes corporativos.</p>
+                    <p className="text-muted-foreground font-bold text-sm">Administración de inquilinos y clientes corporativos.</p>
                 </div>
                 <button
                     onClick={() => { setIsAdding(true); setEditingId(null); }}
-                    className="bg-primary text-white px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all"
+                    className="bg-primary text-primary-foreground px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shrink-0"
                 >
                     <Plus className="w-5 h-5" /> Nueva Empresa
                 </button>

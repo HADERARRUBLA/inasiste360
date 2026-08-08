@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Building2, MapPin, Navigation, Save, ShieldCheck, Radius, RefreshCcw } from 'lucide-react';
 import { formatLatLng, validateLatLng } from '../utils/geoUtils';
+import { showToast } from '../lib/toastStore';
 
 interface CompanySetupProps {
     companyId: string | null;
@@ -103,7 +104,7 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
     };
 
     const detectLocation = () => {
-        if (!navigator.geolocation) return alert('Geolocalización no soportada');
+        if (!navigator.geolocation) return showToast('Geolocalización no soportada', 'error');
 
         setStatus({ type: 'success', msg: 'Detectando ubicación GPS...' });
         navigator.geolocation.getCurrentPosition(
@@ -142,7 +143,7 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Configuración de Sede</h2>
                     <p className="text-muted-foreground font-bold text-sm">Define la ubicación física y los límites de marcación.</p>

@@ -5,6 +5,7 @@ import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Bu
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 import type { EventType, TimeEntryMetadata } from '../types';
+import { ThemeToggle } from './ThemeToggle';
 
 interface KioskModeProps {
     companyId: string;
@@ -310,6 +311,9 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
     return (
         <div className="max-w-md mx-auto relative animate-in zoom-in-95 duration-500">
+            <div className="absolute -top-16 right-0 z-[60]">
+                <ThemeToggle />
+            </div>
             {countdown !== null && (
                 <div 
                     onClick={() => { 

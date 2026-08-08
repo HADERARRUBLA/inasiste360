@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
-import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X } from 'lucide-react';
 import { KioskMode } from './components/KioskMode';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EmployeeManagement } from './components/EmployeeManagement';
@@ -11,7 +11,11 @@ import { AuditSystem } from './components/AuditSystem';
 
 import { OrganizationManagement } from './components/OrganizationManagement';
 import { LandingPage } from './components/LandingPage';
+import { ThemeToggle } from './components/ThemeToggle';
+import { ToastContainer } from './components/ToastContainer';
 import { parseLatLng } from './utils/geoUtils';
+
+type ActiveTab = 'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations';
 
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -19,7 +23,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations'>('dashboard');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [loginData, setLoginData] = useState({ email: '', password: '' });
@@ -193,6 +198,11 @@ function App() {
     setIsKiosk(true);
   };
 
+  const selectTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    setIsSidebarOpen(false);
+  };
+
   if (isPasswordRecovery) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
@@ -337,21 +347,28 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-primary/20">
-      <header className="border-b bg-card/50 backdrop-blur-xl sticky top-0 z-50 h-28 flex items-center px-10 justify-between">
-        <div className="flex items-center gap-10">
-          <div className="hover:opacity-90 transition-opacity">
-            <img src="/logo_horizontal.png" alt="Logo" className="h-[110px] w-auto object-contain -ml-8" />
+      <header className="border-b bg-card/50 backdrop-blur-xl sticky top-0 z-50 h-20 lg:h-28 flex items-center px-4 lg:px-10 justify-between gap-2">
+        <div className="flex items-center gap-3 lg:gap-10 min-w-0">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="lg:hidden p-2 -ml-1 rounded-xl text-muted-foreground hover:text-primary hover:bg-muted/50 transition-all shrink-0"
+            aria-label="Abrir menú"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="hover:opacity-90 transition-opacity shrink-0">
+            <img src="/logo_horizontal.png" alt="Logo" className="h-[56px] lg:h-[110px] w-auto object-contain lg:-ml-8" />
           </div>
-          <div className="h-10 w-[2px] bg-primary/20 rounded-full" />
+          <div className="h-10 w-[2px] bg-primary/20 rounded-full hidden md:block" />
           <div className="hidden md:block">
             <p className="text-[10px] text-muted-foreground font-black tracking-[0.4em] uppercase opacity-40">Software de Gestión</p>
             <p className="text-sm font-bold text-primary italic uppercase tracking-tighter">SaaS Enterprise Edition</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 lg:gap-4 shrink-0">
           {userProfile?.role === 'superadmin' && companies.length > 1 && (
-            <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-xl border">
+            <div className="hidden sm:flex items-center gap-2 bg-muted/50 p-1 rounded-xl border">
               <Building2 className="w-4 h-4 ml-2 text-muted-foreground" />
               <select
                 value={selectedCompanyId || ''}
@@ -364,52 +381,69 @@ function App() {
               </select>
             </div>
           )}
+          <ThemeToggle />
           <button
             onClick={enterKioskMode}
-            className="bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-white px-6 py-2.5 text-sm font-bold rounded-xl border transition-all active:scale-95"
+            className="bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-white px-3 lg:px-6 py-2.5 text-xs lg:text-sm font-bold rounded-xl border transition-all active:scale-95 whitespace-nowrap"
           >
-            Modo Quiosco
+            <span className="hidden sm:inline">Modo </span>Quiosco
           </button>
           <button
             onClick={handleSignOut}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-2 px-2 lg:px-5 py-2.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
           >
-            <LogOut className="w-4 h-4" /> Salir
+            <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Salir</span>
           </button>
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <aside className="w-72 border-r bg-card/20 flex flex-col pt-8 px-6 transition-all duration-300">
+      <div className="flex-1 flex overflow-hidden relative">
+        {isSidebarOpen && (
+          <div
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+
+        <aside
+          className={`${isSidebarOpen ? 'flex animate-in slide-in-from-left duration-300' : 'hidden'} lg:flex fixed lg:static inset-y-0 left-0 z-50 lg:z-auto w-72 bg-card border-r flex-col pt-8 px-6`}
+        >
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="lg:hidden self-end mb-4 p-2 rounded-xl text-muted-foreground hover:bg-muted/50 transition-all"
+            aria-label="Cerrar menú"
+          >
+            <X className="w-5 h-5" />
+          </button>
           <div className="p-5 bg-muted/20 border border-muted rounded-[2rem] space-y-2 shadow-inner">
             <p className="px-4 py-2 text-[10px] font-black text-muted-foreground tracking-[0.2em] uppercase">Navegación</p>
             <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'dashboard' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+              onClick={() => selectTab('dashboard')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'dashboard' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
               <LayoutDashboard className="w-4 h-4" /> Dashboard
             </button>
             <button
-              onClick={() => setActiveTab('employees')}
-              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'employees' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+              onClick={() => selectTab('employees')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'employees' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
               <Users className="w-4 h-4" /> Empleados
             </button>
             <button
-              onClick={() => setActiveTab('audit')}
-              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'audit' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+              onClick={() => selectTab('audit')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'audit' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
               <ShieldCheck className="w-4 h-4" /> Auditoría
             </button>
             <button
-              onClick={() => setActiveTab('reports')}
-              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'reports' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+              onClick={() => selectTab('reports')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'reports' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
               <FileDown className="w-4 h-4" /> Reportes
             </button>
             <button
-              onClick={() => setActiveTab('config')}
-              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'config' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+              onClick={() => selectTab('config')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'config' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
               <Settings className="w-4 h-4" /> Configuración
             </button>
@@ -417,20 +451,20 @@ function App() {
             {userProfile?.role === 'superadmin' && (
               <>
                 <button
-                  onClick={() => setActiveTab('organizations')}
-                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'organizations' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+                  onClick={() => selectTab('organizations')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'organizations' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
                 >
                   <Building2 className="w-4 h-4" /> Empresas (SaaS)
                 </button>
                 <button
-                  onClick={() => setActiveTab('branches')}
-                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'branches' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+                  onClick={() => selectTab('branches')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'branches' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
                 >
                   <MapPin className="w-4 h-4" /> Sedes Globales
                 </button>
                 <button
-                  onClick={() => setActiveTab('admins')}
-                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'admins' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-white/50'}`}
+                  onClick={() => selectTab('admins')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'admins' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
                 >
                   <ShieldCheck className="w-4 h-4" /> Administradores
                 </button>
@@ -448,7 +482,7 @@ function App() {
           </div>
         </aside>
 
-        <main className="flex-1 p-8 overflow-y-auto">
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto overflow-x-hidden min-w-0">
           <section className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             {activeTab === 'dashboard' ? (
               <AdminDashboard companyId={selectedCompanyId} view="analytics" />
@@ -478,6 +512,7 @@ function App() {
           </section>
         </main>
       </div>
+      <ToastContainer />
     </div>
   );
 }

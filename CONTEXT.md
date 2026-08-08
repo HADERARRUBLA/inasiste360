@@ -253,6 +253,28 @@ Durante esta misma ventana de tiempo, se detectó que los perfiles de `Migue` (`
 
 ---
 
+## 13. Fase 1 del roadmap de producto: renovación visual/UX (2026-08-08)
+
+El usuario pidió 5 frentes de trabajo para evolucionar el producto (ver plan completo en `.claude/plans` de la sesión — resumen aquí). Orden confirmado: landing+visual+responsive → multi-sede → novedades/ausencias → nómina avanzada → HRM. Esta sesión completó la **Fase 1**.
+
+### Hallazgo: sistema de tokens de color roto
+`frontend/src/index.css` solo definía 7 tokens de color (`background`, `surface`, `primary`, etc.), pero **todo el panel admin** (`App.tsx` + los 9 componentes) usaba masivamente clases como `bg-card`, `text-muted-foreground`, `text-primary-foreground`, `bg-destructive` — más de 100 usos sin token real detrás. Gran parte del panel llevaba tiempo renderizando sin los colores que el código decía que debía tener.
+
+### Qué se implementó
+- **`frontend/src/index.css`**: sistema de tokens completo (`background`, `foreground`, `card`, `primary`, `primary-foreground`, `muted`, `muted-foreground`, `destructive`, `destructive-foreground`) para claro (`:root`) y oscuro (`.dark`), usando `@custom-variant dark` de Tailwind v4. Se quitó un `background-color: #ffffff` forzado en `body` que habría roto el modo oscuro.
+- **`frontend/src/hooks/useTheme.ts`** + **`frontend/src/components/ThemeToggle.tsx`**: toggle claro/oscuro persistido en `localStorage`, integrado en `App.tsx` y `KioskMode.tsx`. La landing pública (`LandingPage.tsx`) se mantiene siempre oscura (tokens `exec-*` propios, decisión de marca confirmada con el usuario).
+- **Responsive real del panel admin**: `App.tsx` — sidebar convertido en drawer móvil (toggle por `display: none/flex` con `lg:flex`, **no** con `translate-x-*`: esas utilidades de Tailwind v4 no aplicaban correctamente en este entorno de pruebas — causa no resuelta del todo, ver nota abajo). Tablas de `EmployeeManagement`, `BranchManagement`, `AdminManagement` envueltas en `overflow-x-auto`. Headers de página (`AdminManagement`, `BranchManagement`, `CompanySetup`, `OrganizationManagement`) convertidos a `flex-col sm:flex-row`.
+- **Landing renovada** (`LandingPage.tsx`): hero con ejemplo numérico concreto de ahorro (coherente con la fórmula real de `ROIView`), CTA principal reenfocado a "Agenda tu Demo Gratuita", nuevo botón secundario "Ver mi Ahorro Estimado" que lleva directo a la calculadora, prueba social honesta (se quitó la afirmación no verificable "Fortune 500").
+- **Sistema de toasts**: `frontend/src/lib/toastStore.ts` + `frontend/src/components/ToastContainer.tsx` (store pub-sub simple, sin dependencias nuevas). Reemplazados los 17 `alert()` nativos en `AdminManagement`, `BranchManagement`, `AdminDashboard`, `EmployeeManagement`, `CompanySetup`, `OrganizationManagement`.
+
+### ⚠️ Nota técnica pendiente de investigar
+Durante las pruebas se encontró que las utilidades `translate-x-0` / `-translate-x-full` de Tailwind v4 (que usan la propiedad CSS nativa `translate`, no `transform`) **no se aplicaban visualmente** pese a que la clase correcta sí estaba en el DOM — verificado con servidor reiniciado y caché de Vite limpiada, así que no era solo un problema de HMR. Se evitó el problema usando `hidden`/`flex` (patrón ya probado en el resto del código) en vez de `translate-*` para el drawer del sidebar. **Si en fases futuras se necesita una animación de deslizamiento real (no solo mostrar/ocultar), investigar esto primero** — podría ser una interacción específica de esta versión de `@tailwindcss/vite` con la propiedad `translate` nativa, o algo del entorno de pruebas usado en esta sesión que no reproduce en un navegador real.
+
+### Verificado
+`npm run build` y `tsc --noEmit` limpios. Probado en vivo en 375px/768px/1280px: sidebar/drawer, tablas sin overflow horizontal, toggle claro/oscuro (valores de fondo/texto confirmados vía `getComputedStyle`), login y navegación completa funcionando. **Pendiente para el usuario:** revisión visual directa (capturas de pantalla no fueron posibles en el entorno de pruebas de esta sesión — panel de navegador no se pudo mostrar para captura) y prueba en un dispositivo móvil/tablet real.
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash

@@ -1,18 +1,37 @@
 @import "tailwindcss";
 
-/* 🏢 Estilos Globales Estándar (Light para InAsiste360 funcional) */
+/* Habilita variante "dark:" controlada por la clase .dark en <html>
+   (en vez de solo prefers-color-scheme), para poder tener un toggle manual. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 🏢 Sistema de diseño — Panel interno (Dashboard, Kiosko, formularios admin) */
 @theme {
   --color-background: #ffffff;
+  --color-foreground: #1e293b;
+
+  --color-card: #ffffff;
+  --color-card-foreground: #1e293b;
+
+  --color-primary: #0047ab;
+  --color-primary-foreground: #ffffff;
+
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+
+  --color-outline-variant: #e2e8f0;
+
+  /* Alias heredados (se mantienen por compatibilidad, mismos valores que arriba) */
   --color-surface: #ffffff;
   --color-surface-container: #ffffff;
-  --color-primary: #0047ab;
   --color-on-surface: #1e293b;
   --color-on-surface-variant: #64748b;
-  --color-outline-variant: #e2e8f0;
-  
+
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  /* 🏔️ TOKENS EXCLUSIVOS PARA LA LANDING (Sin solapamiento) */
+  /* 🏔️ TOKENS EXCLUSIVOS PARA LA LANDING (siempre oscura, sin variante dark) */
   --color-exec-bg: #0b1326;
   --color-exec-surface: #171f33;
   --color-exec-low: #131b2e;
@@ -25,10 +44,35 @@
   --color-exec-outline: #434653;
 }
 
+/* Valores oscuros: mismas variables, sobrescritas cuando <html> tiene la clase .dark.
+   No toca los tokens --color-exec-* (la landing se mantiene siempre oscura). */
+.dark {
+  --color-background: #0f172a;
+  --color-foreground: #e2e8f0;
+
+  --color-card: #1e293b;
+  --color-card-foreground: #e2e8f0;
+
+  --color-primary: #4c8dff;
+  --color-primary-foreground: #ffffff;
+
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+
+  --color-destructive: #f87171;
+  --color-destructive-foreground: #1e0a0a;
+
+  --color-outline-variant: #334155;
+
+  --color-surface: #0f172a;
+  --color-surface-container: #1e293b;
+  --color-on-surface: #e2e8f0;
+  --color-on-surface-variant: #94a3b8;
+}
+
 @layer base {
   body {
-    @apply bg-background text-on-surface font-sans selection:bg-primary/10;
-    background-color: #ffffff; /* Fuerza blanco real */
+    @apply bg-background text-foreground font-sans selection:bg-primary/10;
   }
 }
 
@@ -37,12 +81,12 @@
     background-image: radial-gradient(circle, rgba(177, 197, 255, 0.05) 1px, transparent 1px);
     background-size: 24px 24px;
   }
-  
+
   .exec-glass-panel {
     @apply backdrop-blur-xl border border-white/10;
     background-color: rgba(34, 42, 61, 0.6);
   }
-  
+
   .exec-metallic-edge {
     box-shadow: inset 0 0.5px 0 0 rgba(255, 255, 255, 0.2);
   }

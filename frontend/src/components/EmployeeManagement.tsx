@@ -5,6 +5,7 @@ import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDo
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 import * as XLSX from 'xlsx';
+import { showToast } from '../lib/toastStore';
 
 interface EmployeeManagementProps {
     companyId: string | null;
@@ -117,7 +118,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             setProfiles(data || []);
         } catch (err: any) {
             console.error('Error fetching profiles:', err);
-            alert('Error cargando empleados: ' + err.message);
+            showToast('Error cargando empleados: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -184,7 +185,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                         setIsCameraActive(false);
                     }
                 } else {
-                    alert('No se detectó rostro. Intenta de nuevo.');
+                    showToast('No se detectó rostro. Intenta de nuevo.', 'error');
                 }
             }
         }
@@ -194,7 +195,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         e.preventDefault();
 
         if (!formData.company_id) {
-            alert('Error: No hay sede seleccionada.');
+            showToast('Error: No hay sede seleccionada.', 'error');
             return;
         }
 
@@ -240,7 +241,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             fetchProfiles();
         } else {
             console.error('Error de Supabase al guardar:', error);
-            alert('Error crítico al guardar: ' + error.message + '\nDetalles: ' + (error.details || 'Ver consola'));
+            showToast('Error crítico al guardar: ' + error.message + (error.details ? ' — ' + error.details : ''), 'error');
         }
     };
 
@@ -274,7 +275,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
     const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !companyId || !formData.organization_id) {
-            alert('Por favor asegúrate de tener una sede activa y seleccionar un archivo válido.');
+            showToast('Por favor asegúrate de tener una sede activa y seleccionar un archivo válido.', 'error');
             return;
         }
 
@@ -288,7 +289,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 const data = XLSX.utils.sheet_to_json(ws) as any[];
 
                 if (data.length === 0) {
-                    alert('El archivo está vacío.');
+                    showToast('El archivo está vacío.', 'error');
                     return;
                 }
 
@@ -313,7 +314,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 // Basic validation for required fields
                 const invalid = profilesToImport.find(p => !p.full_name || !p.national_id || !p.pin_code);
                 if (invalid) {
-                    alert('Hay registros incompletos (Nombre, ID o PIN faltantes). Por favor verifica el Excel.');
+                    showToast('Hay registros incompletos (Nombre, ID o PIN faltantes). Por favor verifica el Excel.', 'error');
                     return;
                 }
 
@@ -325,12 +326,12 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
                     if (error) throw error;
                     
-                    alert('Importación completada con éxito.');
+                    showToast('Importación completada con éxito.', 'success');
                     fetchProfiles();
                 }
             } catch (err: any) {
                 console.error('Error importing:', err);
-                alert('Error al procesar el Excel: ' + err.message);
+                showToast('Error al procesar el Excel: ' + err.message, 'error');
             } finally {
                 setLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
@@ -341,11 +342,11 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <h2 className="text-2xl font-black text-foreground uppercase tracking-tight italic">Directorio de Colaboradores</h2>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-4">
                     <SearchInput value={searchTerm} onChange={setSearchTerm} />
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -649,6 +650,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             )}
 
             <div className="bg-card border rounded-[2.5rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-6 duration-700">
+              <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-widest">
                         <tr>
@@ -723,6 +725,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                         ))}
                     </tbody>
                 </table>
+              </div>
             </div>
         </div>
     );

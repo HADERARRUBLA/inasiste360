@@ -149,15 +149,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
             Mientras lees esto, el <span className="text-exec-primary">5%</span> de tu nómina podría ser <span className="text-exec-primary/60 italic">tiempo no laborado.</span>
           </h1>
           <p className="text-xl md:text-2xl text-exec-on-variant font-medium max-w-2xl leading-relaxed">Detén las fugas de nómina hoy con IA Biométrica y Geocercas de precisión quirúrgica.</p>
-          <div className="flex flex-col sm:flex-row items-center gap-8 pt-4 justify-center lg:justify-start">
-            <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full sm:w-auto px-12 py-6 bg-[#0047ab] text-white rounded-md exec-metallic-edge font-bold uppercase tracking-widest text-sm hover:brightness-110 active:scale-[0.98] transition-all shadow-xl">Detener las fugas de nómina hoy</button>
-            <button onClick={onLoginClick} className="w-full sm:w-auto px-12 py-6 bg-exec-high border border-exec-outline/30 text-exec-on-surface rounded-md font-bold uppercase tracking-widest text-sm hover:bg-exec-highest transition-all backdrop-blur-md">Acceso VIP</button>
+          <p className="text-sm md:text-base text-exec-primary/80 font-bold max-w-2xl leading-relaxed">
+            Ejemplo: en una empresa de 50 colaboradores, eso representa cerca de <span className="text-exec-primary font-black">$75.000.000 COP al año</span>. Calcula el número exacto para tu empresa abajo.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center gap-6 pt-4 justify-center lg:justify-start">
+            <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full sm:w-auto px-12 py-6 bg-[#0047ab] text-white rounded-md exec-metallic-edge font-bold uppercase tracking-widest text-sm hover:brightness-110 active:scale-[0.98] transition-all shadow-xl">Agenda tu Demo Gratuita</button>
+            <button onClick={() => setView('roi')} className="w-full sm:w-auto px-12 py-6 bg-exec-high border border-exec-outline/30 text-exec-on-surface rounded-md font-bold uppercase tracking-widest text-sm hover:bg-exec-highest transition-all backdrop-blur-md flex items-center justify-center gap-3">
+              <Calculator className="w-4 h-4 text-exec-primary" /> Ver mi Ahorro Estimado
+            </button>
           </div>
           <div className="flex items-center gap-3 pt-10">
               <div className="flex -space-x-3">
                   {[1,2,3].map(i => <div key={i} className="w-8 h-8 rounded-full border-2 border-exec-bg bg-slate-800" />)}
               </div>
-              <span className="text-[10px] font-bold text-exec-on-variant/40 uppercase tracking-widest">Confiado por empresas Fortune 500 para control total.</span>
+              <span className="text-[10px] font-bold text-exec-on-variant/40 uppercase tracking-widest">Protegiendo la nómina de equipos en manufactura, retail y logística en Colombia.</span>
           </div>
         </motion.div>
         <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1 }} className="flex-1 relative w-full aspect-square max-w-[650px] flex items-center justify-center">
@@ -188,8 +193,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
         <div className="max-w-7xl mx-auto">
           <header className="mb-20">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-exec-primary/10 border border-exec-primary/20 rounded mb-4"><Shield className="w-4 h-4 text-exec-primary" /><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-exec-primary">PROTOCOLO DE SEGURIDAD ACTIVO</span></div>
-            <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-white mb-8 leading-tight">Calculadora de <br/><span className="text-exec-primary/80">ROI de Confianza</span></h1>
-            <p className="text-xl text-exec-on-variant max-w-2xl font-light">Calcula cuánto dinero está perdiendo tu empresa por el fraude de asistencia y la ineficiencia operativa. Masteriza tus activos con inteligencia soberana.</p>
+            <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-white mb-8 leading-tight">Calculadora de <br/><span className="text-exec-primary/80">Ahorro Real</span></h1>
+            <p className="text-xl text-exec-on-variant max-w-2xl font-light">Ajusta los números a tu operación y mira cuánto dinero podría estar perdiendo tu empresa hoy por marcaciones manuales, "buddy punching" y tiempo no laborado.</p>
           </header>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
             <div className="lg:col-span-4 space-y-12">

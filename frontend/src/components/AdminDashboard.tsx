@@ -11,6 +11,7 @@ import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer
 } from 'recharts';
+import { showToast } from '../lib/toastStore';
 
 interface AdminDashboardProps {
     companyId: string | null;
@@ -470,7 +471,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
             if (deleteError) throw deleteError;
 
-            alert('Registros depurados correctamente.');
+            showToast('Registros depurados correctamente.', 'success');
 
             // Refresh data
             const { data: entryData } = await supabase
@@ -480,7 +481,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 .order('created_at', { ascending: false });
             setEntries(entryData || []);
         } catch (err: any) {
-            alert('Error al limpiar registros: ' + err.message);
+            showToast('Error al limpiar registros: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }

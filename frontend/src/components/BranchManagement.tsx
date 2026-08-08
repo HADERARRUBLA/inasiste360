@@ -4,6 +4,7 @@ import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius, C
 import type { Company } from '../types';
 import { formatLatLng, validateLatLng, parseLatLng } from '../utils/geoUtils';
 import { GeoPickerMap } from './GeoPickerMap';
+import { showToast } from '../lib/toastStore';
 
 const DEFAULT_SCHEDULE = {
     mon: { start: '08:00', end: '17:00', active: true },
@@ -78,7 +79,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) =>
     const getGeolocation = () => {
         setIsGettingLocation(true);
         if (!navigator.geolocation) {
-            alert('Tu navegador no soporta geolocalización.');
+            showToast('Tu navegador no soporta geolocalización.', 'error');
             setIsGettingLocation(false);
             return;
         }
@@ -99,7 +100,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) =>
                 else if (error.code === 2) errorMsg = 'Ubicación no disponible.';
                 else if (error.code === 3) errorMsg = 'Tiempo de espera agotado.';
 
-                alert(errorMsg);
+                showToast(errorMsg, 'error');
                 setIsGettingLocation(false);
             },
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -205,13 +206,13 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) =>
             if (onSave) onSave();
 
         } catch (err: any) {
-            alert('Error al eliminar: ' + err.message);
+            showToast('Error al eliminar: ' + err.message, 'error');
         }
     };
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-black text-foreground uppercase tracking-tight italic">Gestión de Sedes</h2>
                     <p className="text-muted-foreground font-bold text-sm">Administración global de ubicaciones físicas.</p>
@@ -461,6 +462,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) =>
             )}
 
             <div className="bg-card border rounded-[2.5rem] overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                         <tr>
@@ -528,6 +530,7 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) =>
                         ))}
                     </tbody>
                 </table>
+              </div>
             </div>
         </div>
     );
