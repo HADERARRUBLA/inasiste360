@@ -301,6 +301,9 @@ Con todo lo demás funcionando bien, el usuario pidió opciones para hacer el lo
 
 Implementado en el logo del navbar (`Navbar` en `LandingPage.tsx`): el badge-escudo completo (glow + imagen + contorno animado, todo lo de la ronda 3) ahora vive dentro de un `motion.div` que se mueve en `y: [0, -10, 0]` en loop — sube y baja suavemente. Una sombra elíptica independiente (`bg-black/60 blur-md`, `-z-10`) queda fija en la base del contenedor (no se mueve) y anima `scaleX`/`opacity` con la misma duración/easing, encogiéndose y desvaneciéndose cuando el logo "sube" — la ilusión clásica de un objeto levitando. Se quitó la animación de `scale` (respiración) que tenía antes, para que el movimiento vertical sea el protagonista sin competir con otro efecto.
 
+### Ronda 6: escudo → aro con punto orbitando (guiño al "360" de la marca)
+Al usuario le gustó el flotante, pero pidió cambiar el escudo por un aro simple con un punto que le dé la vuelta completa — conectando literalmente con el "360" del nombre de la marca. Implementado: se quitaron los `clipPath` de escudo (glow, badge y contorno SVG); ahora es un badge circular simple (`rounded-full`) con el logo, un aro fijo (`border rounded-full`), y un punto brillante (`w-3 h-3 rounded-full bg-exec-primary` con glow) que orbita 360° alrededor usando la técnica de envolver el punto en un `motion.div` que rota (`animate={{ rotate: 360 }}`, `duration: 4, ease: 'linear'`) con el punto posicionado en el borde superior — el efecto de levitación (float + sombra) de la ronda 5 se mantiene intacto.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente
