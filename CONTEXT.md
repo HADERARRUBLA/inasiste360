@@ -181,8 +181,12 @@ Tras revisar el análisis, el usuario (Hader Arrubla) definió el rumbo:
 6. **Acceso a Supabase:** el usuario compartirá URL + anon key del proyecto **DEV** directamente en el chat para poder inspeccionar tablas y políticas RLS reales (nunca la `service_role key` ni credenciales de producción).
 
 ### Preguntas aún abiertas
-- Confirmar en Vercel cuál rama (`develop` vs `desarrollo`) es el Preview real conectado a Supabase DEV.
 - Definir email real para la cuenta "Super Admin" (hoy su `national_id` es literalmente el string `"admin"`, no un correo).
+
+### Resuelto (2026-08-08): ramas `develop` vs `desarrollo`
+- **`desarrollo`** está **abandonada**: parada en el commit `b838966` (18 feb 2026), **17 commits detrás de `master`** — le faltan meses de fixes (biometría, kiosko, geo, nómina). Por eso su Preview (`inasiste360-git-desarrollo-...vercel.app`) tiene login roto: es código viejo, no relacionado con la migración RLS.
+- **`develop`** sí está casi al día (2 commits detrás de `master`, antes del release de fases 1-5 y de este fix de seguridad) — es la rama que realmente coincide con lo que describe `DESARROLLO.md`.
+- **Decisión del usuario:** por ahora no tocar ninguna rama (ni actualizar `develop`, ni borrar `desarrollo`). Pendiente para una sesión futura si se retoma el flujo de Preview antes de mergear a `master`.
 
 ## 11. Hallazgo confirmado en vivo (2026-08-08): RLS abierta en Supabase DEV
 
@@ -216,6 +220,7 @@ Migración SQL lista para revisión/ejecución en [`supabase/migrations/0001_sec
 - ⏳ **Aún sin probar:** `AuditSystem.tsx`, `BranchManagement.tsx`, `CompanySetup.tsx`, `AdminManagement.tsx`, `OrganizationManagement.tsx`, y el flujo completo del Kiosko con GPS/cámara reales (solo se probó `kiosk_verify_pin` vía curl). Se recomienda probarlos en la siguiente sesión.
 - ⏳ **Aún sin crear:** cuentas Auth para los otros 2 admins (`miguel@hh.com`, `gerencia@alimentosfoodper.com`).
 - 📝 **Nota operativa:** en Supabase Dashboard → Authentication → URL Configuration, se cambió `Site URL` de `http://localhost:3000` a `http://localhost:5173` y se agregó `http://localhost:5173/**` a Redirect URLs, para que los links de recuperación de contraseña apunten al entorno local correcto. Hay que revisar este valor antes de desplegar a Preview/Producción (debería apuntar al dominio real de Vercel en esos entornos, no a localhost).
+- ⚠️ **Hallazgo importante (2026-08-08):** `inasiste360.vercel.app` (rama `master`, Producción) usa el **mismo proyecto Supabase** (`atrrjjavlxnloknqhnxk`) que el que se documentó como "DEV" — verificado inspeccionando el bundle JS servido en producción. **No existe una separación real DEV/PROD a nivel de base de datos**, contrario a lo que describe `DESARROLLO.md`. Consecuencia directa: al aplicar la migración 0001 (RLS + RPCs), el código viejo ya desplegado en `master` quedó roto (su login y Kiosko leían la tabla directo, ahora bloqueado por RLS) hasta que el fix de esta sesión se despliegue también a `master`. Pendiente de decisión con el usuario: crear un proyecto Supabase separado para Producción real antes de tener clientes, o aceptar un solo proyecto por ahora dado el estado temprano del producto.
 
 ---
 
