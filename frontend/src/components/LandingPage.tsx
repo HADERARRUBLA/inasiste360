@@ -1,28 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Shield, 
-  Zap, 
-  Command, 
-  Activity, 
-  Lock, 
-  History, 
-  Bell, 
-  Settings, 
-  User, 
-  TrendingUp, 
-  Clock, 
-  BarChart3, 
-  Wallet, 
-  ArrowRight, 
-  CheckCircle2, 
-  Fingerprint, 
-  MapPin, 
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
+import {
+  Shield,
+  Activity,
+  History,
+  User,
+  TrendingUp,
+  Clock,
+  BarChart3,
+  Wallet,
+  ArrowRight,
+  CheckCircle2,
+  Fingerprint,
   Calculator,
-  Gavel,
-  Verified,
-  Cpu,
-  Menu,
-  X
+  ScanFace,
+  Building2,
+  FileSpreadsheet,
+  MapPinned
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -85,12 +82,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
             animate={{ scale: [1, 1.05, 1] }}
             transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           >
-            <div className="relative w-24 h-24">
-              <div className="absolute inset-2 bg-white/15 backdrop-blur-sm rounded-full z-0 border border-white/20 shadow-xl"></div>
-               <motion.div 
-                className="absolute inset-[-5%] border-t-2 border-exec-primary/40 rounded-full"
+            <div className="relative w-32 h-32 md:w-36 md:h-36">
+              <motion.div
+                className="absolute -inset-2 rounded-full bg-exec-primary/25 blur-xl"
+                animate={{ opacity: [0.3, 0.65, 0.3], scale: [0.92, 1.08, 0.92] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              />
+              <div className="absolute inset-3 bg-white/15 backdrop-blur-sm rounded-full z-0 border border-white/20 shadow-xl"></div>
+              <motion.div
+                className="absolute inset-[-6%] border-t-2 border-exec-primary/50 rounded-full"
                 animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
+              />
+              <motion.div
+                className="absolute inset-4 border-b-2 border-exec-primary/30 rounded-full"
+                animate={{ rotate: -360 }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: "linear" }}
               />
               <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
             </div>
@@ -111,11 +118,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
 
   const Sidebar = () => {
     const menuItems = [
-      { id: 'dashboard', label: 'COMANDO', icon: Command },
-      { id: 'analytics', label: 'ANALÍTICA', icon: Activity },
-      { id: 'biometrics', label: 'BIOMETRÍA', icon: Fingerprint },
-      { id: 'vault', label: 'BÓVEDA', icon: Lock },
-      { id: 'audit', label: 'AUDITORÍA', icon: History },
+      { id: 'dashboard', label: 'DASHBOARD', icon: Activity },
+      { id: 'empleados', label: 'EMPLEADOS', icon: User },
+      { id: 'auditoria', label: 'AUDITORÍA', icon: History },
+      { id: 'reportes', label: 'REPORTES', icon: BarChart3 },
+      { id: 'sedes', label: 'SEDES', icon: MapPinned },
     ];
     return (
       <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-72 bg-exec-bg border-r border-exec-outline/10 flex-col z-40 pt-32 pb-8 shadow-2xl">
@@ -148,14 +155,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
           <h1 className="text-5xl md:text-[5.5rem] lg:text-[6.5rem] font-black tracking-tight leading-[0.9] text-exec-on-surface">
             Mientras lees esto, el <span className="text-exec-primary">5%</span> de tu nómina podría ser <span className="text-exec-primary/60 italic">tiempo no laborado.</span>
           </h1>
-          <p className="text-xl md:text-2xl text-exec-on-variant font-medium max-w-2xl leading-relaxed">Detén las fugas de nómina hoy con IA Biométrica y Geocercas de precisión quirúrgica.</p>
-          <p className="text-sm md:text-base text-exec-primary/80 font-bold max-w-2xl leading-relaxed">
+          <p className="text-2xl md:text-3xl text-exec-on-variant font-medium max-w-2xl leading-relaxed">Detén las fugas de nómina hoy con IA Biométrica y Geocercas de precisión quirúrgica.</p>
+          <p className="text-base md:text-lg text-exec-primary/80 font-bold max-w-2xl leading-relaxed">
             Ejemplo: en una empresa de 50 colaboradores, eso representa cerca de <span className="text-exec-primary font-black">$75.000.000 COP al año</span>. Calcula el número exacto para tu empresa abajo.
           </p>
           <div className="flex flex-col sm:flex-row items-center gap-6 pt-4 justify-center lg:justify-start">
-            <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full sm:w-auto px-12 py-6 bg-[#0047ab] text-white rounded-md exec-metallic-edge font-bold uppercase tracking-widest text-sm hover:brightness-110 active:scale-[0.98] transition-all shadow-xl">Agenda tu Demo Gratuita</button>
-            <button onClick={() => setView('roi')} className="w-full sm:w-auto px-12 py-6 bg-exec-high border border-exec-outline/30 text-exec-on-surface rounded-md font-bold uppercase tracking-widest text-sm hover:bg-exec-highest transition-all backdrop-blur-md flex items-center justify-center gap-3">
-              <Calculator className="w-4 h-4 text-exec-primary" /> Ver mi Ahorro Estimado
+            <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full sm:w-auto px-14 py-7 bg-[#0047ab] text-white rounded-md exec-metallic-edge font-bold uppercase tracking-widest text-base hover:brightness-110 active:scale-[0.98] transition-all shadow-xl">Agenda tu Demo Gratuita</button>
+            <button onClick={() => setView('roi')} className="w-full sm:w-auto px-14 py-7 bg-exec-high border border-exec-outline/30 text-exec-on-surface rounded-md font-bold uppercase tracking-widest text-base hover:bg-exec-highest transition-all backdrop-blur-md flex items-center justify-center gap-3">
+              <Calculator className="w-5 h-5 text-exec-primary" /> Ver mi Ahorro Estimado
             </button>
           </div>
           <div className="flex items-center gap-3 pt-10">
@@ -165,10 +172,29 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
               <span className="text-[10px] font-bold text-exec-on-variant/40 uppercase tracking-widest">Protegiendo la nómina de equipos en manufactura, retail y logística en Colombia.</span>
           </div>
         </motion.div>
-        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1 }} className="flex-1 relative w-full aspect-square max-w-[650px] flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1 }} className="flex-1 relative w-full aspect-square max-w-[700px] flex items-center justify-center">
           <div className="relative w-full h-full rounded-2xl border border-white/5 bg-exec-low/40 backdrop-blur-2xl overflow-hidden shadow-2xl p-4">
             <div className="absolute inset-0 exec-point-cloud opacity-30"></div>
-            <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbGFzxPZ2YxNE9zcMX8VEfOQUAjlmrAgDcGT7Pk_hDxqVFQHlTteZE1rdwi7TpJXm__-oP5LyCA9uONh9ebiLmS50peQckcXezZui0990AAquwfhOInKbtDlftJmBu2PBUnnvica_FQizjZ6kYj1hlXVE2ECwXZy6mgudsuv2BfY9Zj6W_gzsxlnF8wlIiwAKkoMIXEnJS4lWTsAQXjYCTIuEKXTLTWmGuvaxOAZr581DHB7A2DJ831-0o4kJ7ZY3SmU69wo1ODhMs" alt="AI Face Scan" className="w-full h-full object-contain mix-blend-screen opacity-80" />
+
+            {/* Emblema central de escaneo biométrico (sin dependencias externas) */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <motion.div
+                className="absolute w-2/3 aspect-square rounded-full bg-exec-primary/10 blur-2xl"
+                animate={{ opacity: [0.3, 0.55, 0.3], scale: [0.95, 1.05, 0.95] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              {[1, 2, 3].map(ring => (
+                <motion.div
+                  key={ring}
+                  className="absolute rounded-full border border-exec-primary/20"
+                  style={{ width: `${ring * 22}%`, height: `${ring * 22}%` }}
+                  animate={{ rotate: ring % 2 === 0 ? -360 : 360 }}
+                  transition={{ duration: 10 + ring * 4, repeat: Infinity, ease: 'linear' }}
+                />
+              ))}
+              <ScanFace className="w-1/3 h-1/3 text-exec-primary relative z-10 drop-shadow-[0_0_25px_rgba(177,197,255,0.5)]" strokeWidth={1} />
+            </div>
+
             <div className="absolute top-10 right-10 p-4 bg-exec-bg/80 backdrop-blur-xl border border-white/10 rounded-lg exec-metallic-edge w-56 shadow-xl">
                <div className="flex justify-between items-start mb-4"><span className="text-[10px] uppercase tracking-tighter text-exec-primary font-bold">PRECISION DEL NODO</span><span className="text-[10px] text-green-400 font-mono">99.9%</span></div>
                <div className="h-1 bg-white/5 w-full rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: '99.9%' }} transition={{ duration: 2, delay: 0.5 }} className="h-full bg-exec-primary" /></div>
@@ -176,6 +202,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
             <div className="absolute bottom-12 left-10 p-4 bg-exec-bg/80 backdrop-blur-xl border border-white/10 rounded-lg exec-metallic-edge shadow-xl flex items-center gap-3">
               <div className="w-10 h-10 bg-exec-primary/10 rounded-md flex items-center justify-center"><Fingerprint className="w-6 h-6 text-exec-primary" /></div>
               <div><p className="text-[10px] uppercase font-bold text-white/40 leading-none mb-1">Sujeto Identificado</p><p className="text-xs font-mono font-bold text-exec-primary">ID: EJECUTIVO_774</p></div>
+            </div>
+            <div className="absolute bottom-12 right-10 p-4 bg-exec-bg/80 backdrop-blur-xl border border-white/10 rounded-lg exec-metallic-edge shadow-xl flex items-center gap-3">
+              <div className="w-10 h-10 bg-exec-primary/10 rounded-md flex items-center justify-center"><MapPinned className="w-6 h-6 text-exec-primary" /></div>
+              <div><p className="text-[10px] uppercase font-bold text-white/40 leading-none mb-1">Geocerca</p><p className="text-xs font-mono font-bold text-emerald-400">VALIDADA</p></div>
             </div>
             <motion.div animate={{ top: ['0%', '100%', '0%'] }} transition={{ duration: 4, repeat: Infinity, ease: 'linear' }} className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-exec-primary/50 to-transparent z-20" />
           </div>
@@ -187,27 +217,85 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
   const ROIView = () => {
     const [personnel, setPersonnel] = useState(1250);
     const [fraudRate, setFraudRate] = useState(4.5);
-    const annualSavings = personnel * (fraudRate / 100) * 12 * 2500000;
+    const [sedes, setSedes] = useState(3);
+    const [minWage, setMinWage] = useState(1300000);
+    const [transportSubsidy, setTransportSubsidy] = useState(200000);
+    const [payrollHours, setPayrollHours] = useState(20);
+    const [adminHourCost, setAdminHourCost] = useState(25000);
+    const [period, setPeriod] = useState<'monthly' | 'annual'>('annual');
+
+    const avgMonthlyCost = minWage + transportSubsidy;
+    const fraudSavingsAnnual = personnel * (fraudRate / 100) * 12 * avgMonthlyCost;
+    const payrollSavingsAnnual = payrollHours * adminHourCost * 12;
+    const totalAnnualSavings = fraudSavingsAnnual + payrollSavingsAnnual;
+    const totalMonthlySavings = totalAnnualSavings / 12;
+    const displayedSavings = period === 'annual' ? totalAnnualSavings : totalMonthlySavings;
+
+    const avgHourlyRate = avgMonthlyCost / 230; // ~230h laborales/mes en Colombia
+    const hoursRecoveredFraudAnnual = avgHourlyRate > 0 ? fraudSavingsAnnual / avgHourlyRate : 0;
+    const hoursRecoveredTotalAnnual = hoursRecoveredFraudAnnual + payrollHours * 12;
+    const hoursRecoveredDisplayed = period === 'annual' ? hoursRecoveredTotalAnnual : hoursRecoveredTotalAnnual / 12;
+
+    const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const baselineMonthlyCost = avgMonthlyCost * personnel;
+    const monthlyChartData = useMemo(() => monthLabels.map(mes => ({
+      mes,
+      'Sin Asiste360': Math.round(baselineMonthlyCost + totalMonthlySavings),
+      'Con Asiste360': Math.round(baselineMonthlyCost),
+    })), [baselineMonthlyCost, totalMonthlySavings]);
+
+    const breakdownData = useMemo(() => [
+      { name: 'Tiempo no laborado evitado', value: Math.round(fraudSavingsAnnual) },
+      { name: 'Horas de nómina automatizadas', value: Math.round(payrollSavingsAnnual) },
+    ], [fraudSavingsAnnual, payrollSavingsAnnual]);
+    const BREAKDOWN_COLORS = ['#b1c5ff', '#4ade80'];
+
     return (
       <div className="min-h-screen pt-32 pb-12 px-8 bg-exec-bg">
         <div className="max-w-7xl mx-auto">
           <header className="mb-20">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-exec-primary/10 border border-exec-primary/20 rounded mb-4"><Shield className="w-4 h-4 text-exec-primary" /><span className="text-[10px] font-bold uppercase tracking-[0.2em] text-exec-primary">PROTOCOLO DE SEGURIDAD ACTIVO</span></div>
             <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-white mb-8 leading-tight">Calculadora de <br/><span className="text-exec-primary/80">Ahorro Real</span></h1>
-            <p className="text-xl text-exec-on-variant max-w-2xl font-light">Ajusta los números a tu operación y mira cuánto dinero podría estar perdiendo tu empresa hoy por marcaciones manuales, "buddy punching" y tiempo no laborado.</p>
+            <p className="text-xl text-exec-on-variant max-w-2xl font-light">Ajusta los números a tu operación y mira cuánto dinero podría estar perdiendo tu empresa hoy por marcaciones manuales, "buddy punching" y horas dedicadas a calcular nómina a mano.</p>
           </header>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <div className="lg:col-span-4 space-y-12">
-              <div className="exec-glass-panel p-10 rounded-lg">
-                <div className="mb-12 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">NÚMERO DE COLABORADORES</label><span className="text-3xl font-black text-white">{personnel.toLocaleString()}</span></div>
-                <input type="range" min="5" max="10000" value={personnel} onChange={(e) => setPersonnel(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
-                <div className="mb-12 flex justify-between items-end pt-12"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">% DE FRAUDE ESTIMADO</label><span className="text-3xl font-black text-white">{fraudRate}%</span></div>
-                <input type="range" min="1" max="15" step="0.5" value={fraudRate} onChange={(e) => setFraudRate(parseFloat(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
-                <p className="mt-12 text-[9px] text-slate-500 italic leading-relaxed">*Basado en un salario promedio de $2.5M COP y promedios de la industria para el sector logístico y de manufactura.</p>
+            <div className="lg:col-span-4 space-y-8">
+              <div className="exec-glass-panel p-10 rounded-lg space-y-10">
+                <div>
+                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">COLABORADORES</label><span className="text-2xl font-black text-white">{personnel.toLocaleString()}</span></div>
+                  <input type="range" min="5" max="10000" value={personnel} onChange={(e) => setPersonnel(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
+                </div>
+                <div>
+                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">SEDES</label><span className="text-2xl font-black text-white">{sedes}</span></div>
+                  <input type="range" min="1" max="50" value={sedes} onChange={(e) => setSedes(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
+                </div>
+                <div>
+                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">% DE FRAUDE / TIEMPO PERDIDO</label><span className="text-2xl font-black text-white">{fraudRate}%</span></div>
+                  <input type="range" min="1" max="15" step="0.5" value={fraudRate} onChange={(e) => setFraudRate(parseFloat(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
+                </div>
+                <div>
+                  <div className="mb-4 flex justify-between items-end"><label className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">HORAS/MES CALCULANDO NÓMINA A MANO</label><span className="text-2xl font-black text-white">{payrollHours}h</span></div>
+                  <input type="range" min="2" max="80" value={payrollHours} onChange={(e) => setPayrollHours(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-exec-primary" />
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Salario mínimo</label>
+                    <input type="number" value={minWage} onChange={(e) => setMinWage(parseInt(e.target.value) || 0)} className="w-full bg-slate-900/50 border border-white/10 rounded px-3 py-2 text-sm font-bold text-white outline-none focus:border-exec-primary/50" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Aux. transporte</label>
+                    <input type="number" value={transportSubsidy} onChange={(e) => setTransportSubsidy(parseInt(e.target.value) || 0)} className="w-full bg-slate-900/50 border border-white/10 rounded px-3 py-2 text-sm font-bold text-white outline-none focus:border-exec-primary/50" />
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <label className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Costo hora administrativa (COP)</label>
+                    <input type="number" value={adminHourCost} onChange={(e) => setAdminHourCost(parseInt(e.target.value) || 0)} className="w-full bg-slate-900/50 border border-white/10 rounded px-3 py-2 text-sm font-bold text-white outline-none focus:border-exec-primary/50" />
+                  </div>
+                </div>
+                <p className="text-[9px] text-slate-500 italic leading-relaxed">*Ajusta el salario mínimo y el auxilio de transporte al valor vigente en tu país/año. Los valores aquí son solo un punto de partida editable.</p>
               </div>
               <div className="space-y-6">
                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white">PROTOCOLO DE OPTIMIZACIÓN</h3>
-                 <div className="space-y-4">{['Eliminación de marcajes manuales', 'Verificación biométrica en tiempo real', 'Auditoría de IA distribuida'].map((text, i) => (
+                 <div className="space-y-4">{['Eliminación de marcajes manuales', 'Verificación biométrica en tiempo real', 'Cálculo de nómina 100% automático'].map((text, i) => (
                     <div key={i} className="flex items-center gap-4 text-sm text-exec-on-variant">
                       <CheckCircle2 className="w-5 h-5 text-exec-primary" />
                       <span>{text}</span>
@@ -215,18 +303,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                  ))}</div>
               </div>
             </div>
-            <div className="lg:col-span-8 space-y-12">
-              <motion.div key={annualSavings} initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative bg-[#0047ab] p-16 rounded-xl shadow-2xl border-t border-white/20">
+            <div className="lg:col-span-8 space-y-8">
+              <div className="flex justify-end">
+                <div className="inline-flex bg-exec-high border border-white/10 rounded-lg p-1">
+                  <button onClick={() => setPeriod('monthly')} className={`px-5 py-2 rounded text-[10px] font-black uppercase tracking-widest transition-all ${period === 'monthly' ? 'bg-exec-primary text-exec-bg' : 'text-exec-on-variant/60'}`}>Mensual</button>
+                  <button onClick={() => setPeriod('annual')} className={`px-5 py-2 rounded text-[10px] font-black uppercase tracking-widest transition-all ${period === 'annual' ? 'bg-exec-primary text-exec-bg' : 'text-exec-on-variant/60'}`}>Anual</button>
+                </div>
+              </div>
+              <motion.div key={`${displayedSavings}-${period}`} initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative bg-[#0047ab] p-16 rounded-xl shadow-2xl border-t border-white/20">
                  <div className="absolute top-0 right-0 p-10 opacity-10"><Wallet className="w-40 h-40 text-white" /></div>
-                 <label className="text-[11px] font-bold uppercase tracking-[0.4em] text-white/50 block mb-8">AHORRO ANUAL ESTIMADO (COP)</label>
-                 <div className="flex items-baseline gap-6"><span className="text-3xl font-bold text-white/50">COP $</span><span className="text-7xl md:text-[6.5rem] font-black tracking-tighter text-white">{Math.round(annualSavings).toLocaleString('es-CO')}</span></div>
-                 <div className="mt-10 flex items-center gap-2 text-white/60 font-bold text-[11px] uppercase tracking-widest"><TrendingUp className="w-4 h-4" /> POTENCIAL DE ESCALABILIDAD: +12.4%</div>
+                 <label className="text-[11px] font-bold uppercase tracking-[0.4em] text-white/50 block mb-8">AHORRO {period === 'annual' ? 'ANUAL' : 'MENSUAL'} ESTIMADO (COP)</label>
+                 <div className="flex items-baseline gap-6"><span className="text-3xl font-bold text-white/50">COP $</span><span className="text-7xl md:text-[6.5rem] font-black tracking-tighter text-white">{Math.round(displayedSavings).toLocaleString('es-CO')}</span></div>
+                 <div className="mt-10 flex items-center gap-2 text-white/60 font-bold text-[11px] uppercase tracking-widest"><TrendingUp className="w-4 h-4" /> PROYECTADO PARA {personnel.toLocaleString()} COLABORADORES EN {sedes} {sedes === 1 ? 'SEDE' : 'SEDES'}</div>
               </motion.div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {[
-                  { label: 'Horas Recuperadas', value: (personnel * 14.5).toLocaleString(), icon: Clock },
-                  { label: 'Reducción de Costo', value: '7.2%', icon: BarChart3 },
-                  { label: 'ROI Estimado', value: '340%', icon: Calculator },
+                  { label: 'Horas Recuperadas', value: `${Math.round(hoursRecoveredDisplayed).toLocaleString()}h`, icon: Clock },
+                  { label: 'Fuga Eliminada', value: `${fraudRate}%`, icon: BarChart3 },
+                  { label: 'Horas Nómina Automatizadas/Año', value: `${(payrollHours * 12).toLocaleString()}h`, icon: Calculator },
                 ].map((stat, i) => (
                   <div key={i} className="bg-exec-high p-8 rounded-lg border border-white/5 hover:border-exec-primary/20 transition-all group">
                     <label className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 block">{stat.label}</label>
@@ -234,6 +328,54 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                   </div>
                 ))}
               </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div className="lg:col-span-3 exec-glass-panel p-8 rounded-lg">
+                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white mb-6">Costo mensual: sin vs. con Asiste360</h3>
+                  <div className="h-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthlyChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                        <XAxis dataKey="mes" tick={{ fontSize: 10, fill: '#c3c6d5' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 9, fill: '#c3c6d5' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${Math.round(v / 1000000)}M`} />
+                        <Tooltip
+                          contentStyle={{ background: '#171f33', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 11 }}
+                          labelStyle={{ color: '#dae2fd' }}
+                          formatter={(v: number) => `$${v.toLocaleString('es-CO')}`}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        <Bar dataKey="Sin Asiste360" fill="#475569" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Con Asiste360" fill="#b1c5ff" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="lg:col-span-2 exec-glass-panel p-8 rounded-lg">
+                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white mb-6">De dónde viene tu ahorro</h3>
+                  <div className="h-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={breakdownData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85} paddingAngle={4}>
+                          {breakdownData.map((entry, i) => <Cell key={i} fill={BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{ background: '#171f33', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 11 }}
+                          formatter={(v: number) => `$${v.toLocaleString('es-CO')}`}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="space-y-2 mt-2">
+                    {breakdownData.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[10px] text-exec-on-variant/70">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length] }} />
+                        {d.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               <button onClick={() => window.open(CTA_LINK, '_blank')} className="w-full bg-[#0047ab] text-white py-12 rounded-xl font-black uppercase tracking-[0.3em] text-sm shadow-lg hover:brightness-110 flex items-center justify-center gap-6 group">
                 DETENER LAS FUGAS DE NÓMINA HOY <ArrowRight className="w-6 h-6 group-hover:translate-x-3 transition-transform" />
               </button>
@@ -250,7 +392,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
       <div className="h-full w-full p-12 flex flex-col gap-10 relative z-10">
         <div>
             <h1 className="text-[4.5rem] font-bold tracking-[-0.04em] leading-none text-exec-on-surface">Centro de Comando</h1>
-            <p className="text-[0.6875rem] uppercase tracking-[0.2em] text-exec-primary mt-4 font-bold">NODO OPERATIVO: GLOBAL-ALPHA-9</p>
+            <p className="text-[0.6875rem] uppercase tracking-[0.2em] text-exec-primary mt-4 font-bold">ASÍ SE VE ASISTE360 POR DENTRO</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="exec-glass-panel p-10 rounded-lg relative overflow-hidden group">
@@ -272,41 +414,55 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
             <div className="mt-6 text-[10px] text-exec-on-variant/40 font-bold uppercase tracking-widest">Tiempo de Actividad: 4,520 Horas Continuas</div>
           </div>
         </div>
-        <div className="flex-1 flex gap-10 min-h-0 pb-10">
-          <div className="flex-[3] exec-glass-panel rounded-xl overflow-hidden relative bg-exec-low">
-            <div className="absolute top-10 left-10 z-20"><div className="bg-exec-bg/80 backdrop-blur px-5 py-2.5 rounded-lg border border-exec-outline/20 flex items-center gap-3"><span className="w-2.5 h-2.5 rounded-full bg-exec-primary animate-ping"></span><span className="text-[0.75rem] font-black tracking-widest uppercase text-exec-on-surface">Malla de Nodos en Vivo</span></div></div>
-            <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbu8u1qYtQ2yeT7AII9U9jgH1a_gNQYYWON6UJlgHEzIpU2aMC_2Y7HPgviSwnGoD9O5VZqYBDuamEc-7qznhT1nQWUmWWF_eYpQjZHSgF_QkiWJRev6vYAXM5hwfYr0XuSutlz06GwDOK1QRKwNmDq8pw8rpFXH9JXqjJYrs1NAw18-m8ysj0h05SfEBPohOx2WN34i7Moo7N6KrncV8escbJ3ZF_XREan4R3kz8gXUayhTesqjba2IH_CFWglxtwB8JE6FrX9kY3" alt="Map" className="w-full h-full object-cover opacity-20 grayscale" />
-            <div className="absolute bottom-10 left-10 p-6 exec-glass-panel rounded-xl max-w-sm">
-                <div className="text-[10px] font-bold text-exec-primary mb-2 tracking-[0.1em] uppercase">Nodo de Enfoque</div>
-                <div className="text-xl font-black mb-1 text-white">Centro Ciudad de México</div>
-                <div className="text-[10px] text-exec-on-variant/60">1,204 Turnos Activos • 0 Anomalías</div>
+        <div className="flex-1 flex flex-col lg:flex-row gap-10 min-h-0 pb-10 overflow-y-auto">
+          <div className="flex-[3] space-y-6">
+            <h3 className="text-[0.6875rem] font-black uppercase text-exec-on-variant/60 tracking-[0.2em]">Todo lo que tu operación necesita, en un solo lugar</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {[
+                { icon: ScanFace, title: 'Asistencia en Tiempo Real', desc: 'Marcación por PIN o rostro desde el Kiosko, con validación de ubicación.' },
+                { icon: Wallet, title: 'Nómina Automática', desc: 'Horas ordinarias, extra diurna, nocturna y dominical calculadas solas.' },
+                { icon: History, title: 'Auditoría con Evidencia', desc: 'Cada marcación queda con foto, GPS y veredicto biométrico.' },
+                { icon: MapPinned, title: 'Geovallas por Sede', desc: 'Radio configurable: nadie marca si no está físicamente en el sitio.' },
+                { icon: Building2, title: 'Multi-sede y Multi-empresa', desc: 'Una sola cuenta para administrar todas tus sedes y empresas.' },
+                { icon: FileSpreadsheet, title: 'Reportes y Excel', desc: 'Exporta nómina, novedades y alertas listas para contabilidad.' },
+              ].map((item, i) => (
+                <div key={i} className="exec-glass-panel rounded-xl p-6 flex items-start gap-4 hover:border-exec-primary/30 transition-all group">
+                  <div className="w-12 h-12 shrink-0 bg-exec-primary/10 rounded-lg flex items-center justify-center group-hover:bg-exec-primary/20 transition-all">
+                    <item.icon className="w-6 h-6 text-exec-primary" strokeWidth={1.5} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-white uppercase tracking-tight mb-1">{item.title}</p>
+                    <p className="text-xs text-exec-on-variant/60 font-medium leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="flex-1 space-y-8 flex flex-col min-w-[340px]">
+          <div className="flex-1 space-y-8 flex flex-col min-w-[300px] lg:min-w-[340px]">
               <div className="exec-glass-panel rounded-xl p-8 flex flex-col h-[60%]">
-                <div className="flex justify-between items-center mb-8"><h3 className="text-[0.6875rem] font-black uppercase text-exec-on-variant/80 tracking-[0.2em]">FEED DE INTELIGENCIA</h3><span className="text-[9px] text-exec-on-variant/30 font-bold uppercase px-2 py-0.5 border border-white/5 rounded">Tiempo Real</span></div>
+                <div className="flex justify-between items-center mb-8"><h3 className="text-[0.6875rem] font-black uppercase text-exec-on-variant/80 tracking-[0.2em]">MARCACIONES RECIENTES</h3><span className="text-[9px] text-exec-on-variant/30 font-bold uppercase px-2 py-0.5 border border-white/5 rounded">Tiempo Real</span></div>
                 <div className="flex-1 overflow-y-auto space-y-6">
                     {[
-                        { title: 'Marcus Thorne', sub: 'Centro Logístico A', time: '12:44:02' },
-                        { title: 'Elena Rodriguez', sub: 'Sede Central - Piso 12', time: '12:43:58' },
-                         { title: 'Julian Chen', sub: 'Nodo Remoto - VPN 04', time: '12:43:15' }
+                        { title: 'Andrés Hernández', sub: 'Sede Norte · Entrada', time: '07:58:12' },
+                        { title: 'Beatriz López', sub: 'Sede Centro · Regreso Almuerzo', time: '13:01:40' },
+                        { title: 'Carlos Gómez', sub: 'Sede Norte · Salida', time: '17:02:05' }
                     ].map((item, i) => (
                         <div key={i} className="flex gap-4 items-start pb-4 border-b border-white/5">
                             <div className="w-10 h-10 rounded bg-slate-800 border border-white/5" />
                             <div className="flex-1">
                                 <div className="flex justify-between items-start mb-1 text-[11px] font-black text-white"><span>{item.title}</span><span className="text-[9px] text-exec-on-variant/40 font-mono">{item.time}</span></div>
                                 <div className="text-[9px] text-exec-on-variant/40 font-bold uppercase tracking-tighter mb-1">{item.sub}</div>
-                                <div className="flex items-center gap-1.5 text-[8px] text-emerald-400 font-black"><CheckCircle2 className="w-2.5 h-2.5" /> &lt;0.5S COINCIDENCIA BIOMÉTRICA</div>
+                                <div className="flex items-center gap-1.5 text-[8px] text-emerald-400 font-black"><CheckCircle2 className="w-2.5 h-2.5" /> BIOMETRÍA VERIFICADA</div>
                             </div>
                         </div>
                     ))}
                 </div>
               </div>
               <div className="exec-glass-panel rounded-xl p-8 bg-red-500/5 border-red-500/20">
-                  <div className="flex justify-between items-center mb-6"><h3 className="text-[0.6875rem] font-black uppercase text-red-400 tracking-[0.2em]">ANOMALÍAS DETECTADAS</h3><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span></div>
+                  <div className="flex justify-between items-center mb-6"><h3 className="text-[0.6875rem] font-black uppercase text-red-400 tracking-[0.2em]">ALERTAS AUTOMÁTICAS</h3><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span></div>
                   <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/30">
-                      <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black text-white">Desviación de Geocerca</span><span className="text-[9px] font-black text-red-500">CRÍTICO</span></div>
-                      <p className="text-[9px] font-bold text-exec-on-variant/60 leading-tight">ID Trabajador: #98219 - Intento de autenticación fuera del perímetro.</p>
+                      <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black text-white">Llegada Tarde</span><span className="text-[9px] font-black text-red-500">12 MIN</span></div>
+                      <p className="text-[9px] font-bold text-exec-on-variant/60 leading-tight">Daniela Rojas · Sede Norte · Detectado automáticamente contra el horario configurado.</p>
                   </div>
               </div>
           </div>
