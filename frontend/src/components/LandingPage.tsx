@@ -76,37 +76,45 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
     return (
       <nav className={`fixed top-0 w-full z-50 transition-all duration-500 px-8 h-32 flex justify-between items-center ${isScrolled ? 'bg-exec-bg/80 backdrop-blur-xl border-b border-exec-outline/15 shadow-2xl' : 'bg-transparent'}`}>
         <div className="flex items-center gap-10">
-          <motion.div 
-            className="flex items-center cursor-pointer"
-            onClick={() => setView('landing')}
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-          >
+          <div className="flex items-center cursor-pointer" onClick={() => setView('landing')}>
             <div className="relative w-24 h-24 md:w-28 md:h-28">
+              {/* El logo (escudo + glow + contorno) flota en Y; la sombra abajo NO se mueve,
+                  solo se encoge/desvanece en sincronía para dar la ilusión de levitación. */}
               <motion.div
-                className="absolute -inset-2 bg-exec-primary/25 blur-xl"
-                style={{ clipPath: 'polygon(50% 0%, 92% 16%, 92% 52%, 76% 84%, 50% 100%, 24% 84%, 8% 52%, 8% 16%)' }}
-                animate={{ opacity: [0.3, 0.65, 0.3] }}
-                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              />
-              <div
-                className="absolute inset-0 bg-white/15 backdrop-blur-sm border border-white/20 shadow-xl overflow-hidden"
-                style={{ clipPath: 'polygon(50% 2%, 91% 17%, 91% 51%, 77% 82%, 50% 98%, 23% 82%, 9% 51%, 9% 17%)' }}
+                className="relative w-full h-full"
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
               >
-                <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
-              </div>
-              <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
-                <polygon points="50,2 91,17 91,51 77,82 50,98 23,82 9,51 9,17" fill="none" stroke="#b1c5ff" strokeWidth="1" strokeOpacity="0.25" />
-                <motion.polygon
-                  points="50,2 91,17 91,51 77,82 50,98 23,82 9,51 9,17"
-                  fill="none" stroke="#b1c5ff" strokeWidth="2"
-                  initial={{ pathLength: 0, opacity: 0.4 }}
-                  animate={{ pathLength: [0, 1], opacity: [0.4, 0.9, 0.4] }}
-                  transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+                <motion.div
+                  className="absolute -inset-2 bg-exec-primary/25 blur-xl"
+                  style={{ clipPath: 'polygon(50% 0%, 92% 16%, 92% 52%, 76% 84%, 50% 100%, 24% 84%, 8% 52%, 8% 16%)' }}
+                  animate={{ opacity: [0.3, 0.65, 0.3] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
                 />
-              </svg>
+                <div
+                  className="absolute inset-0 bg-white/15 backdrop-blur-sm border border-white/20 shadow-xl overflow-hidden"
+                  style={{ clipPath: 'polygon(50% 2%, 91% 17%, 91% 51%, 77% 82%, 50% 98%, 23% 82%, 9% 51%, 9% 17%)' }}
+                >
+                  <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
+                </div>
+                <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
+                  <polygon points="50,2 91,17 91,51 77,82 50,98 23,82 9,51 9,17" fill="none" stroke="#b1c5ff" strokeWidth="1" strokeOpacity="0.25" />
+                  <motion.polygon
+                    points="50,2 91,17 91,51 77,82 50,98 23,82 9,51 9,17"
+                    fill="none" stroke="#b1c5ff" strokeWidth="2"
+                    initial={{ pathLength: 0, opacity: 0.4 }}
+                    animate={{ pathLength: [0, 1], opacity: [0.4, 0.9, 0.4] }}
+                    transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                </svg>
+              </motion.div>
+              <motion.div
+                className="absolute left-1/2 -translate-x-1/2 bottom-1 w-14 h-3 rounded-full bg-black/60 blur-md -z-10"
+                animate={{ scaleX: [1, 0.55, 1], opacity: [0.5, 0.15, 0.5] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+              />
             </div>
-          </motion.div>
+          </div>
           <div className="hidden lg:flex items-center gap-10 ml-4">
             <button onClick={() => setView('landing')} className={`font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] transition-all ${view === 'landing' ? 'text-exec-primary border-b-2 border-exec-primary pb-1' : 'text-exec-on-variant/50 hover:text-exec-on-surface'}`}>Inteligencia</button>
             <button onClick={() => setView('dashboard')} className={`font-sans uppercase tracking-[0.08em] font-bold text-[0.7rem] transition-all ${view === 'dashboard' ? 'text-exec-primary border-b-2 border-exec-primary pb-1' : 'text-exec-on-variant/50 hover:text-exec-on-surface'}`}>Comando</button>

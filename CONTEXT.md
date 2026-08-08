@@ -296,6 +296,11 @@ El usuario probó de nuevo y reportó 3 cosas, dos de ellas bugs reales (no solo
 
 **Lección para las próximas rondas de esta landing:** cuando se quite o cambie un ícono/import, buscar TODOS sus usos en el archivo antes de tocar el import — en este componente hay 5 sub-vistas (`Navbar`, `Sidebar`, `LandingView`, `ROIView`, `DashboardView`) compartiendo un mismo bloque de imports, fácil perder de vista un uso lejano.
 
+### Ronda 5: logo "flotante" (levitación con sombra dinámica)
+Con todo lo demás funcionando bien, el usuario pidió opciones para hacer el logo más impactante ("flotante, girando en su eje o algo más top"). Se ofrecieron 4 direcciones (flotante con sombra, rotación 3D tipo medalla, partículas orbitando, combo de las 3) — eligió **flotante con sombra dinámica**.
+
+Implementado en el logo del navbar (`Navbar` en `LandingPage.tsx`): el badge-escudo completo (glow + imagen + contorno animado, todo lo de la ronda 3) ahora vive dentro de un `motion.div` que se mueve en `y: [0, -10, 0]` en loop — sube y baja suavemente. Una sombra elíptica independiente (`bg-black/60 blur-md`, `-z-10`) queda fija en la base del contenedor (no se mueve) y anima `scaleX`/`opacity` con la misma duración/easing, encogiéndose y desvaneciéndose cuando el logo "sube" — la ilusión clásica de un objeto levitando. Se quitó la animación de `scale` (respiración) que tenía antes, para que el movimiento vertical sea el protagonista sin competir con otro efecto.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente
