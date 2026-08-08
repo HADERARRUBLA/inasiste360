@@ -217,10 +217,39 @@ Migración SQL lista para revisión/ejecución en [`supabase/migrations/0001_sec
 - ⏳ **Pendiente por el usuario:** crear los 3 usuarios de Supabase Auth (Dashboard → Authentication → Users) y vincularlos con el `UPDATE ... set auth_user_id = ...` (instrucciones al final del archivo SQL) — sin esto el login del panel admin no puede probarse aún.
 - ⏳ **Pendiente de prueba manual:** flujo completo del Kiosko con GPS y cámara reales (bloqueado en el navegador sandbox usado para verificación automatizada, por diseño correcto de la geovalla).
 - ✅ **Verificado en vivo (2026-08-08) de punta a punta:** se creó el usuario Auth `hader.arrubla@solucioneshys.com` (UID `5a0b370e-b84d-436d-a846-fa1bb0a09a88`), se vinculó a `InA_profiles.auth_user_id` (perfil `national_id='admin'`, role `superadmin`), se le fijó contraseña directo por SQL (`crypt(..., gen_salt('bf'))` sobre `auth.users.encrypted_password`, sin depender del correo — el plan Free de Supabase tiene un límite muy bajo de envío de emails y se agotó durante las pruebas). Con eso, login real funcionando: dashboard, listado de empleados (`EmployeeManagement.tsx`) y navegación completa cargan datos reales bajo las políticas RLS de la migración 0001, sin cambios de código adicionales en esos componentes — sin errores de consola.
-- ⏳ **Aún sin probar:** `AuditSystem.tsx`, `BranchManagement.tsx`, `CompanySetup.tsx`, `AdminManagement.tsx`, `OrganizationManagement.tsx`, y el flujo completo del Kiosko con GPS/cámara reales (solo se probó `kiosk_verify_pin` vía curl). Se recomienda probarlos en la siguiente sesión.
-- ⏳ **Aún sin crear:** cuentas Auth para los otros 2 admins (`miguel@hh.com`, `gerencia@alimentosfoodper.com`).
+- ✅ **Ronda de regresión completa (2026-08-08, ver sección 12):** todos los módulos probados end-to-end (CRUD real, no solo lectura) y un segundo hallazgo de seguridad (políticas RLS heredadas demasiado permisivas) encontrado y corregido.
 - 📝 **Nota operativa:** en Supabase Dashboard → Authentication → URL Configuration, se cambió `Site URL` de `http://localhost:3000` a `http://localhost:5173` y se agregó `http://localhost:5173/**` a Redirect URLs, para que los links de recuperación de contraseña apunten al entorno local correcto. Hay que revisar este valor antes de desplegar a Preview/Producción (debería apuntar al dominio real de Vercel en esos entornos, no a localhost).
 - ⚠️ **Hallazgo importante (2026-08-08):** `inasiste360.vercel.app` (rama `master`, Producción) usa el **mismo proyecto Supabase** (`atrrjjavlxnloknqhnxk`) que el que se documentó como "DEV" — verificado inspeccionando el bundle JS servido en producción. **No existe una separación real DEV/PROD a nivel de base de datos**, contrario a lo que describe `DESARROLLO.md`. Consecuencia directa: al aplicar la migración 0001 (RLS + RPCs), el código viejo ya desplegado en `master` quedó roto (su login y Kiosko leían la tabla directo, ahora bloqueado por RLS) hasta que el fix de esta sesión se despliegue también a `master`. Pendiente de decisión con el usuario: crear un proyecto Supabase separado para Producción real antes de tener clientes, o aceptar un solo proyecto por ahora dado el estado temprano del producto.
+
+---
+
+## 12. Ronda de regresión completa y segundo hallazgo de seguridad (2026-08-08)
+
+Tras el fix inicial (migración 0001) y el push a `master`/`develop`, se hizo una ronda de pruebas end-to-end de **todos** los módulos del panel admin (no solo lectura — create/update/delete real, con datos de prueba `QA-TEST-*` creados y borrados en cada caso) contra el proyecto Supabase real, antes de avanzar a nuevas funcionalidades. Resultado por módulo:
+
+| Módulo | Resultado |
+|---|---|
+| Auditoría (`AuditSystem.tsx`) | ✅ OK — foto, veredicto biométrico, GPS |
+| Configuración de Sede (`CompanySetup.tsx`) | ✅ OK — UPDATE confirmado |
+| Sedes Globales (`BranchManagement.tsx`) | ✅ OK — INSERT + DELETE confirmados |
+| Empresas SaaS (`OrganizationManagement.tsx`) | ✅ OK — UI smoke test |
+| Administradores (`AdminManagement.tsx`) | ✅ OK (ver incidente de datos abajo) |
+| Empleados (`EmployeeManagement.tsx`) | ✅ OK — INSERT + UPDATE + DELETE confirmados |
+| Kiosko (PIN, geovalla, RPCs) | ✅ OK — `kiosk_verify_pin`, `kiosk_get_last_entry`, `kiosk_verify_face`, `kiosk_register_entry` probados; captura de cámara real queda pendiente para el usuario en su propio dispositivo |
+
+### Segundo hallazgo: políticas RLS heredadas seguían abiertas para `authenticated`
+Al auditar `pg_policies` para entender un comportamiento raro en Administradores, se descubrió que **las 4 tablas principales tenían decenas de políticas previas** (de antes de este proyecto de seguridad) con `qual = true` para el rol `{public}` — ej. `"Allow public select/insert/update/delete on profiles"`, `"Public Read Access"`, `"allow_all_anon_companies"`, etc. Postgres combina políticas PERMISSIVE con OR, así que estas políticas viejas **anulaban por completo el aislamiento por organización de la migración 0001 para cualquier usuario autenticado** (no solo superadmin). El bloqueo a `anon` seguía intacto porque se hizo vía `REVOKE` de privilegios base (una capa distinta a RLS), pero para `authenticated` el aislamiento nunca estuvo realmente activo hasta este punto.
+
+**Corregido** en [`supabase/migrations/0002_drop_legacy_permissive_policies.sql`](supabase/migrations/0002_drop_legacy_permissive_policies.sql) — elimina únicamente las políticas heredadas, deja las de la migración 0001 intactas. Verificado con `pg_policies`: cada tabla ahora solo tiene las políticas propias, todas `{authenticated}`, ninguna `{public}`/`true`.
+
+### Incidente de pérdida de datos: 2 perfiles de administrador borrados
+Durante esta misma ventana de tiempo, se detectó que los perfiles de `Migue` (`miguel@hh.com`) y `ALEJANDRA` (`gerencia@alimentosfoodper.com`) — confirmados existentes al inicio de la sesión vía una consulta anónima — **ya no estaban en la tabla `InA_profiles`** (confirmado con una consulta como `postgres`, que bypasea RLS). Causa más probable: la política heredada `"Allow public delete on profiles"` (`true` para `{public}`) combinada con privilegios de tabla abiertos permitía a **cualquiera con la anon key borrar cualquier perfil sin autenticación**, antes de que el `REVOKE` de la migración 0001 cerrara esa puerta. No se puede confirmar con certeza si fue una explotación externa real o un accidente previo a esta sesión — el proyecto no tiene backups ni Point-in-Time Recovery habilitado, así que no se pudo hacer forense completo por logs.
+
+**Recuperado manualmente**: se reconstruyeron ambos perfiles con los mismos `id` originales (capturados antes del incidente) para preservar la fila de `InA_admin_branches` de Migue. Quedaron con PIN temporal (`9001`/`9002`) — **pendiente que cada uno lo cambie desde Administradores → Editar**. Cualquier otro dato que tuvieran (teléfono, tarifas) se perdió y debe completarse manualmente si aplica.
+
+### Recomendación para el futuro
+- **Habilitar backups en Supabase** (aunque sea manual, exportando la DB periódicamente) — hoy no hay ninguna red de seguridad ante un borrado accidental o malicioso.
+- Antes de cualquier futura migración de esquema, correr `select * from pg_policies where tablename = '...'` primero para descartar más sorpresas heredadas en objetos que aún no se hayan tocado (funciones, triggers, vistas).
 
 ---
 
