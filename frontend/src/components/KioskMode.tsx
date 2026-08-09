@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useGeofencing } from '../hooks/useGeofencing';
-import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2, Timer } from 'lucide-react';
+import { Camera, CheckCircle2, AlertCircle, RefreshCcw, ArrowLeft, UserCheck, Building2, Timer, CalendarOff, Save } from 'lucide-react';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 import type { EventType, TimeEntryMetadata } from '../types';
@@ -32,7 +32,7 @@ interface LastEntry {
 export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, biometricEnabled = false, onSuccess, onBack }) => {
     const { isLoading, isInside, distance, currentLocation, accuracy, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
     const [pin, setPin] = useState('');
-    const [step, setStep] = useState<'pin' | 'action' | 'face'>('pin');
+    const [step, setStep] = useState<'pin' | 'action' | 'face' | 'leave'>('pin');
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [currentUser, setCurrentUser] = useState<KioskUser | null>(null);
     const [lastEntry, setLastEntry] = useState<LastEntry | null>(null);
@@ -40,6 +40,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
     const [status, setStatus] = useState<{ type: 'success' | 'error' | 'loading', msg: string } | null>(null);
     const [countdown, setCountdown] = useState<number | null>(null);
     const [isModelLoaded, setIsModelLoaded] = useState(false);
+    const [leaveForm, setLeaveForm] = useState({
+        type: 'vacaciones' as 'vacaciones' | 'permiso_remunerado' | 'permiso_no_remunerado',
+        start_date: '',
+        end_date: '',
+        notes: ''
+    });
     
     const webcamRef = useRef<Webcam>(null);
     const inactivityTimerRef = useRef<number | null>(null);
@@ -262,6 +268,42 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         }
     };
 
+    const handleLeaveSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!currentUser) return;
+        if (!leaveForm.start_date || !leaveForm.end_date) {
+            setStatus({ type: 'error', msg: 'Selecciona la fecha de inicio y de fin.' });
+            return;
+        }
+        if (leaveForm.end_date < leaveForm.start_date) {
+            setStatus({ type: 'error', msg: 'La fecha final no puede ser anterior a la de inicio.' });
+            return;
+        }
+
+        setStatus({ type: 'loading', msg: 'Enviando solicitud...' });
+        const { error } = await supabase.rpc('kiosk_create_leave_request', {
+            p_profile_id: currentUser.id,
+            p_type: leaveForm.type,
+            p_start_date: leaveForm.start_date,
+            p_end_date: leaveForm.end_date,
+            p_notes: leaveForm.notes || null
+        });
+
+        if (error) {
+            setStatus({ type: 'error', msg: 'Error al enviar la solicitud: ' + error.message });
+        } else {
+            setStatus({ type: 'success', msg: 'Solicitud enviada. Un administrador la revisará pronto.' });
+            setLeaveForm({ type: 'vacaciones', start_date: '', end_date: '', notes: '' });
+            setTimeout(() => resetKiosk(), 3000);
+        }
+    };
+
+    const LEAVE_TYPE_LABELS: Record<string, string> = {
+        vacaciones: 'Vacaciones',
+        permiso_remunerado: 'Permiso Remunerado',
+        permiso_no_remunerado: 'Permiso No Remunerado'
+    };
+
     const getEventLabel = (type: string) => {
         const labels: Record<string, string> = {
             'in': 'Inicio de Día',
@@ -286,6 +328,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         setLastEntry(null);
         setSelectedType(null);
         setStatus(null);
+        setLeaveForm({ type: 'vacaciones', start_date: '', end_date: '', notes: '' });
         cancelInactivityTimer();
     };
 
@@ -502,11 +545,96 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                                 </>
                             )}
                         </div>
+
+                        <button
+                            onClick={() => {
+                                setStep('leave');
+                                setTimeout(() => { cancelInactivityTimer(); startInactivityTimer(); }, 0);
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed rounded-2xl text-muted-foreground font-black text-xs uppercase tracking-widest hover:border-primary hover:text-primary transition-all"
+                        >
+                            <CalendarOff className="w-4 h-4" /> Solicitar Vacaciones o Permiso
+                        </button>
                     </div>
-                ) : (
+                ) : step === 'leave' ? (
                     <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500">
                         <div className="flex items-center justify-between">
-                            <button 
+                            <button
+                                onClick={() => {
+                                    setStep('action');
+                                    setStatus(null);
+                                    setTimeout(() => startInactivityTimer(), 0);
+                                }}
+                                className="flex items-center gap-1 p-2 hover:bg-muted rounded-lg transition-all text-muted-foreground text-[10px] font-black uppercase"
+                            >
+                                <ArrowLeft className="w-4 h-4" /> Volver
+                            </button>
+                            <div className="text-center">
+                                <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">Solicitud</p>
+                                <p className="font-black text-primary text-lg">{currentUser?.full_name}</p>
+                            </div>
+                            <div className="w-24" />
+                        </div>
+
+                        <form onSubmit={handleLeaveSubmit} className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Tipo</label>
+                                <select
+                                    value={leaveForm.type}
+                                    onChange={e => setLeaveForm({ ...leaveForm, type: e.target.value as any })}
+                                    className="w-full px-4 py-3 border-2 rounded-xl bg-background font-bold outline-none focus:border-primary"
+                                >
+                                    {Object.entries(LEAVE_TYPE_LABELS).map(([value, label]) => (
+                                        <option key={value} value={value}>{label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Desde</label>
+                                    <input
+                                        required
+                                        type="date"
+                                        value={leaveForm.start_date}
+                                        onChange={e => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+                                        className="w-full px-3 py-3 border-2 rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Hasta</label>
+                                    <input
+                                        required
+                                        type="date"
+                                        value={leaveForm.end_date}
+                                        onChange={e => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                                        className="w-full px-3 py-3 border-2 rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Nota (opcional)</label>
+                                <textarea
+                                    value={leaveForm.notes}
+                                    onChange={e => setLeaveForm({ ...leaveForm, notes: e.target.value })}
+                                    rows={2}
+                                    className="w-full px-4 py-3 border-2 rounded-xl bg-background font-bold text-sm outline-none focus:border-primary resize-none"
+                                    placeholder="Detalle adicional..."
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={status?.type === 'loading'}
+                                className="w-full flex items-center justify-center gap-3 py-4 bg-primary text-primary-foreground rounded-2xl font-black text-sm shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                            >
+                                <Save className="w-5 h-5" /> ENVIAR SOLICITUD
+                            </button>
+                            <p className="text-[9px] text-muted-foreground text-center font-bold uppercase tracking-widest">Un administrador debe aprobarla antes de que quede confirmada.</p>
+                        </form>
+                    </div>
+                ) : step === 'face' ? (
+                    <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500">
+                        <div className="flex items-center justify-between">
+                            <button
                                 onClick={() => {
                                     setStep('action');
                                     setSelectedType(null);
@@ -549,7 +677,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                             <Camera className="w-6 h-6" /> CONFIRMAR CON FOTO
                         </button>
                     </div>
-                )}
+                ) : null}
 
                 <div className="flex flex-col items-center gap-4 pt-4 border-t border-dashed grayscale opacity-40">
                     <div className="flex items-center gap-6">

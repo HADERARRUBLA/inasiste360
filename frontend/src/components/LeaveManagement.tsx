@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { LeaveRequest, LeaveType } from '../types';
-import { CalendarOff, Plus, X, Save, Trash2, Search } from 'lucide-react';
+import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
 
 interface LeaveManagementProps {
@@ -120,6 +120,32 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
         fetchData();
     };
 
+    const handleApprove = async (id: string) => {
+        const { error } = await supabase
+            .from('InA_leave_requests')
+            .update({ status: 'approved', approved_by: currentProfileId })
+            .eq('id', id);
+        if (error) {
+            showToast('Error al aprobar: ' + error.message, 'error');
+            return;
+        }
+        showToast('Novedad aprobada.', 'success');
+        fetchData();
+    };
+
+    const handleReject = async (id: string) => {
+        const { error } = await supabase
+            .from('InA_leave_requests')
+            .update({ status: 'rejected', approved_by: currentProfileId })
+            .eq('id', id);
+        if (error) {
+            showToast('Error al rechazar: ' + error.message, 'error');
+            return;
+        }
+        showToast('Novedad rechazada.', 'success');
+        fetchData();
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -229,20 +255,21 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                             <th className="px-8 py-6">Tipo</th>
                             <th className="px-8 py-6">Periodo</th>
                             <th className="px-8 py-6 text-center">Días</th>
+                            <th className="px-8 py-6">Estado</th>
                             <th className="px-8 py-6">Notas</th>
                             <th className="px-8 py-6 text-right">Gestión</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y text-sm">
                         {loading ? (
-                            <tr><td colSpan={6} className="px-8 py-20 text-center">
+                            <tr><td colSpan={7} className="px-8 py-20 text-center">
                                 <div className="flex flex-col items-center gap-4 animate-pulse">
                                     <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
                                     <p className="font-black text-xs uppercase tracking-widest text-muted-foreground">Sincronizando Novedades...</p>
                                 </div>
                             </td></tr>
                         ) : filteredRequests.length === 0 ? (
-                            <tr><td colSpan={6} className="px-8 py-20 text-center text-muted-foreground font-black uppercase text-xs tracking-widest opacity-20 italic">
+                            <tr><td colSpan={7} className="px-8 py-20 text-center text-muted-foreground font-black uppercase text-xs tracking-widest opacity-20 italic">
                                 {searchTerm ? `No se encontró: "${searchTerm}"` : 'Sin novedades registradas para esta sede.'}
                             </td></tr>
                         ) : filteredRequests.map((req: any) => (
@@ -260,14 +287,44 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                                     {req.start_date} → {req.end_date}
                                 </td>
                                 <td className="px-8 py-6 text-center font-black">{daysBetween(req.start_date, req.end_date)}</td>
+                                <td className="px-8 py-6">
+                                    <span className={`inline-flex items-center px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${
+                                        req.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                                        req.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                        'bg-red-100 text-red-700'
+                                    }`}>
+                                        {req.status === 'pending' ? 'Pendiente' : req.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+                                    </span>
+                                </td>
                                 <td className="px-8 py-6 text-xs text-muted-foreground max-w-xs truncate">{req.notes || '---'}</td>
                                 <td className="px-8 py-6 text-right">
-                                    <button
-                                        onClick={() => handleDelete(req.id)}
-                                        className="p-3 bg-red-50 border border-red-100 shadow-sm rounded-2xl text-destructive hover:bg-destructive hover:text-white transition-all hover:scale-110 active:scale-90 opacity-0 group-hover:opacity-100"
-                                    >
-                                        <Trash2 className="w-4.5 h-4.5" />
-                                    </button>
+                                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                        {req.status === 'pending' && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleApprove(req.id)}
+                                                    className="p-3 bg-green-50 border border-green-100 shadow-sm rounded-2xl text-green-600 hover:bg-green-600 hover:text-white transition-all hover:scale-110 active:scale-90"
+                                                    title="Aprobar"
+                                                >
+                                                    <CheckCircle2 className="w-4.5 h-4.5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleReject(req.id)}
+                                                    className="p-3 bg-amber-50 border border-amber-100 shadow-sm rounded-2xl text-amber-600 hover:bg-amber-600 hover:text-white transition-all hover:scale-110 active:scale-90"
+                                                    title="Rechazar"
+                                                >
+                                                    <XCircle className="w-4.5 h-4.5" />
+                                                </button>
+                                            </>
+                                        )}
+                                        <button
+                                            onClick={() => handleDelete(req.id)}
+                                            className="p-3 bg-red-50 border border-red-100 shadow-sm rounded-2xl text-destructive hover:bg-destructive hover:text-white transition-all hover:scale-110 active:scale-90"
+                                            title="Eliminar"
+                                        >
+                                            <Trash2 className="w-4.5 h-4.5" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}

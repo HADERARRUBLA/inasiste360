@@ -393,6 +393,19 @@ Primer módulo de novedades: vacaciones, incapacidades (EPS/ARL), permisos (remu
 2. Registrar una novedad de prueba y confirmar que aparece en la tabla filtrada por la sede activa.
 3. Decidir cuándo se aborda la V2 (autoservicio del empleado) y la integración con alertas/nómina (Fase 4).
 
+**Actualización — V2 implementado el mismo día (2026-08-09):** el usuario pidió seguir con la V2, pero durante el diseño se identificó que el autoservicio por Kiosko no tiene sentido para TODOS los tipos de novedad — un empleado incapacitado está en casa, no puede pasar por el Kiosko a "solicitar" su incapacidad. El usuario confirmó explícitamente el flujo real: para incapacidades médicas, el empleado envía el soporte por chat al admin, y es el admin quien la registra (con el adjunto, cuando exista Storage en la Fase 5). Esto acotó la V2 a **solo vacaciones y permisos** (remunerado/no remunerado) — lo único que realmente se pide con anticipación, estando presente.
+
+### Qué se implementó (V2)
+- **`supabase/migrations/0006_kiosk_leave_requests.sql`** (el usuario debe ejecutarla): RPC `kiosk_create_leave_request(p_profile_id, p_type, p_start_date, p_end_date, p_notes)`, `SECURITY DEFINER`, otorgada a `anon` (mismo patrón que las demás RPCs del Kiosko). Valida en el servidor (no solo en el frontend) que `p_type` sea uno de los 3 tipos permitidos para autoservicio — defensa en profundidad, ya que cualquiera con la anon key podría llamar la RPC directo. Inserta con `status='pending'`, `requested_by = p_profile_id` (el propio empleado), `approved_by = null`. No requiere cambios de RLS: la política de la migración 0005 ya cubre que el admin apruebe/rechace.
+- **`frontend/src/components/KioskMode.tsx`**: nuevo paso `'leave'` en el flujo del Kiosko. Después de verificar el PIN, aparece un botón secundario "Solicitar Vacaciones o Permiso" (discreto, no compite visualmente con los botones principales de marcación) que lleva a un formulario simple (tipo, fecha desde/hasta, nota opcional). Al enviar, queda pendiente de aprobación — el mensaje de confirmación se lo deja claro al empleado.
+- **`frontend/src/components/LeaveManagement.tsx`**: nueva columna "Estado" con badge (Pendiente/Aprobada/Rechazada) y botones de Aprobar/Rechazar que aparecen solo en solicitudes `pending`, actualizando `status` y `approved_by` con el perfil del admin autenticado.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios, app cargando sin errores de consola (en una pestaña nueva del navegador de pruebas — la anterior mostró un error 500 de Vite que resultó ser caché HMR obsoleta, no un error real, confirmado comparando contra el resultado limpio de `npm run build`). **Pendiente para el usuario:**
+1. Ejecutar `0006_kiosk_leave_requests.sql` en Supabase DEV.
+2. Probar el flujo completo: Kiosko → PIN → "Solicitar Vacaciones o Permiso" → enviar → confirmar que aparece como "Pendiente" en `LeaveManagement.tsx` → Aprobar/Rechazar desde el panel admin.
+3. Confirmar que intentar pedir una incapacidad vía RPC directo (con un `p_type` no permitido) es rechazado por la validación del servidor, no solo por la UI.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente
