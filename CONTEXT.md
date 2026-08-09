@@ -374,6 +374,27 @@ El domingo se mantiene **inconsistente entre los dos consumidores**, tal como ya
 
 ---
 
+## 16. Fase 3: Novedades y ausencias, V1 (2026-08-09)
+
+Primer módulo de novedades: vacaciones, incapacidades (EPS/ARL), permisos (remunerado/no remunerado), licencias (maternidad/paternidad), luto, otro. **V1 según lo acordado**: el admin registra la novedad directamente ya-aprobada (`status='approved'` fijo al crear) — sin flujo de solicitud/aprobación ni autoservicio del empleado todavía (eso queda para una sub-fase posterior vía RPC del Kiosko, igual patrón que las marcaciones por PIN). Tampoco se integró aún con las alertas de "falta" del dashboard ni con el cálculo de nómina — esa integración está roadmapeada explícitamente para la Fase 4, no en el alcance de esta V1.
+
+### Qué se implementó
+- **`supabase/migrations/0005_leave_requests.sql`** (el usuario debe ejecutarla): tabla `InA_leave_requests` (`profile_id`, `type` con 9 valores fijos por `check`, `start_date`/`end_date` con `check (end_date >= start_date)`, `status`, `notes`, `attachment_url` — reservado para cuando exista el bucket de Storage en la Fase 5, `requested_by`/`approved_by`). RLS mismo patrón que `InA_employee_branches`: un admin normal gestiona (no solo lee) las novedades de los empleados de su organización.
+- **`frontend/src/types.ts`**: `LeaveType`, `LeaveStatus`, `LeaveRequest`.
+- **`frontend/src/components/LeaveManagement.tsx`** (nuevo): listado + formulario de registro, filtrado por la sede activa (mismo criterio que `EmployeeManagement` — empleados con esa sede como `company_id`). Al guardar, `requested_by`/`approved_by` se llenan con el perfil del admin autenticado (prop `currentProfileId`, viene de `userProfile.id` en `App.tsx`).
+- **`frontend/src/App.tsx`**: nueva pestaña "Novedades" en la navegación (visible para admin y superadmin, no solo superadmin), entre "Empleados" y "Auditoría".
+
+### Nota técnica: embed con múltiples FK a InA_profiles
+`InA_leave_requests` tiene 3 columnas que referencian `InA_profiles` (`profile_id`, `requested_by`, `approved_by`). El embed de Supabase/PostgREST es ambiguo si no se especifica cuál FK usar — se usó `InA_profiles!profile_id(...)` explícitamente en el `select`. Si en el futuro se necesita traer también el nombre de quien aprobó, hay que embeber por separado con `InA_profiles!approved_by(...)`.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios, app cargando sin errores de consola. **Pendiente para el usuario:**
+1. Ejecutar `0005_leave_requests.sql` en Supabase DEV.
+2. Registrar una novedad de prueba y confirmar que aparece en la tabla filtrada por la sede activa.
+3. Decidir cuándo se aborda la V2 (autoservicio del empleado) y la integración con alertas/nómina (Fase 4).
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash

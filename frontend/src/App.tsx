@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
-import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X, CalendarOff } from 'lucide-react';
 import { KioskMode } from './components/KioskMode';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EmployeeManagement } from './components/EmployeeManagement';
+import { LeaveManagement } from './components/LeaveManagement';
 import { CompanySetup } from './components/CompanySetup';
 import { BranchManagement } from './components/BranchManagement';
 import { AdminManagement } from './components/AdminManagement';
@@ -15,7 +16,7 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { ToastContainer } from './components/ToastContainer';
 import { parseLatLng } from './utils/geoUtils';
 
-type ActiveTab = 'dashboard' | 'employees' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations';
+type ActiveTab = 'dashboard' | 'employees' | 'leaves' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations';
 
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -430,6 +431,12 @@ function App() {
               <Users className="w-4 h-4" /> Empleados
             </button>
             <button
+              onClick={() => selectTab('leaves')}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'leaves' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
+            >
+              <CalendarOff className="w-4 h-4" /> Novedades
+            </button>
+            <button
               onClick={() => selectTab('audit')}
               className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'audit' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
@@ -490,6 +497,8 @@ function App() {
               <AdminDashboard companyId={selectedCompanyId} view="reports" />
             ) : activeTab === 'employees' ? (
               <EmployeeManagement companyId={selectedCompanyId} />
+            ) : activeTab === 'leaves' ? (
+              <LeaveManagement companyId={selectedCompanyId} currentProfileId={userProfile?.id || null} />
             ) : activeTab === 'audit' ? (
               <AuditSystem companyId={selectedCompanyId} />
             ) : activeTab === 'config' ? (

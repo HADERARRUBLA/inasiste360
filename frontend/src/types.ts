@@ -90,3 +90,31 @@ export interface TimeEntry {
 }
 
 export type TimeEntryWithProfile = TimeEntry & { InA_profiles: Profile };
+
+export type LeaveType =
+    | 'vacaciones'
+    | 'incapacidad_eps'
+    | 'incapacidad_arl'
+    | 'permiso_remunerado'
+    | 'permiso_no_remunerado'
+    | 'licencia_maternidad'
+    | 'licencia_paternidad'
+    | 'luto'
+    | 'otro';
+
+export type LeaveStatus = 'pending' | 'approved' | 'rejected';
+
+export interface LeaveRequest {
+    id: string;
+    profile_id: string;
+    type: LeaveType;
+    start_date: string;
+    end_date: string;
+    status: LeaveStatus;
+    notes?: string | null;
+    attachment_url?: string | null;
+    requested_by?: string | null;
+    approved_by?: string | null;
+    created_at?: string;
+    InA_profiles?: Profile;
+}
