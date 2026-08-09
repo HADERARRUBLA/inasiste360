@@ -92,7 +92,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                   transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
                 />
                 <div className="absolute inset-0 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 shadow-xl overflow-hidden">
-                  <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-1" />
+                  <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain scale-150 relative z-10" />
                 </div>
                 {/* Aro fijo */}
                 <div className="absolute inset-0 rounded-full border border-exec-primary/25" />
