@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { LeaveRequest, LeaveType } from '../types';
-import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle, AlertCircle, Pencil, History } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
 
 interface LeaveManagementProps {
@@ -36,6 +36,10 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
     const [searchTerm, setSearchTerm] = useState('');
     const [reviewing, setReviewing] = useState<{ request: any, action: 'approved' | 'rejected' } | null>(null);
     const [decisionNotes, setDecisionNotes] = useState('');
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [historyFor, setHistoryFor] = useState<any | null>(null);
+    const [historyEntries, setHistoryEntries] = useState<any[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     const [formData, setFormData] = useState({
         profile_id: '',
@@ -53,21 +57,40 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
         if (!companyId) { setLoading(false); onPendingCountChange?.(0); return; }
         setLoading(true);
         try {
-            const { data: emps, error: empError } = await supabase
+            // Empleados con esta sede como principal...
+            const { data: primaryEmps, error: empError } = await supabase
                 .from('InA_profiles')
                 .select('id, full_name, national_id')
                 .eq('company_id', companyId)
                 .eq('role', 'employee')
                 .order('full_name');
             if (empError) throw empError;
-            setEmployees(emps || []);
+
+            // ...+ empleados autorizados aquí como sede adicional (multi-sede).
+            const { data: visitingEmps, error: visitingError } = await supabase
+                .from('InA_profiles')
+                .select('id, full_name, national_id, assigned_branches:InA_employee_branches!inner(branch_id)')
+                .eq('role', 'employee')
+                .eq('assigned_branches.branch_id', companyId);
+            if (visitingError) throw visitingError;
+
+            const mergedEmps = [...(primaryEmps || [])];
+            (visitingEmps || []).forEach((v: any) => {
+                if (!mergedEmps.find(e => e.id === v.id)) mergedEmps.push(v);
+            });
+            mergedEmps.sort((a, b) => a.full_name.localeCompare(b.full_name));
+            setEmployees(mergedEmps);
 
             const { data: reqs, error: reqError } = await supabase
                 .from('InA_leave_requests')
                 .select('*, InA_profiles!profile_id(id, full_name, national_id, company_id)')
                 .order('start_date', { ascending: false });
             if (reqError) throw reqError;
-            const scoped = (reqs || []).filter((r: any) => r.InA_profiles?.company_id === companyId);
+            // Novedades de empleados con esta sede como principal O de visita
+            // (mismo criterio que el picker de arriba, para que una novedad
+            // recién creada para un empleado "de visita" no desaparezca).
+            const scopedEmployeeIds = new Set(mergedEmps.map(e => e.id));
+            const scoped = (reqs || []).filter((r: any) => scopedEmployeeIds.has(r.profile_id));
             setRequests(scoped);
             onPendingCountChange?.(scoped.filter((r: any) => r.status === 'pending').length);
         } catch (err: any) {
@@ -94,25 +117,93 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
             return;
         }
         try {
-            const { error } = await supabase.from('InA_leave_requests').insert([{
-                profile_id: formData.profile_id,
-                type: formData.type,
-                start_date: formData.start_date,
-                end_date: formData.end_date,
-                status: 'approved',
-                notes: formData.notes || null,
-                requested_by: currentProfileId,
-                approved_by: currentProfileId
-            }]);
-            if (error) throw error;
-            showToast('Novedad registrada con éxito.', 'success');
+            if (editingId) {
+                // El UPDATE dispara el trigger de auditoría en el servidor —
+                // queda registro de qué cambió, sin importar este código.
+                const { error } = await supabase
+                    .from('InA_leave_requests')
+                    .update({
+                        profile_id: formData.profile_id,
+                        type: formData.type,
+                        start_date: formData.start_date,
+                        end_date: formData.end_date,
+                        notes: formData.notes || null
+                    })
+                    .eq('id', editingId);
+                if (error) throw error;
+                showToast('Novedad actualizada. El cambio queda en el historial.', 'success');
+            } else {
+                const { error } = await supabase.from('InA_leave_requests').insert([{
+                    profile_id: formData.profile_id,
+                    type: formData.type,
+                    start_date: formData.start_date,
+                    end_date: formData.end_date,
+                    status: 'approved',
+                    notes: formData.notes || null,
+                    requested_by: currentProfileId,
+                    approved_by: currentProfileId
+                }]);
+                if (error) throw error;
+                showToast('Novedad registrada con éxito.', 'success');
+            }
             setIsAdding(false);
+            setEditingId(null);
             setFormData({ profile_id: '', type: 'vacaciones', start_date: '', end_date: '', notes: '' });
             fetchData();
         } catch (err: any) {
             console.error('Error al guardar novedad:', err);
             showToast('Error al guardar: ' + err.message, 'error');
         }
+    };
+
+    const handleEdit = (req: any) => {
+        setFormData({
+            profile_id: req.profile_id,
+            type: req.type,
+            start_date: req.start_date,
+            end_date: req.end_date,
+            notes: req.notes || ''
+        });
+        setEditingId(req.id);
+        setIsAdding(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const openHistory = async (req: any) => {
+        setHistoryFor(req);
+        setHistoryLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('InA_leave_request_audit')
+                .select('*, InA_profiles!changed_by(full_name)')
+                .eq('leave_request_id', req.id)
+                .order('changed_at', { ascending: false });
+            if (error) throw error;
+            setHistoryEntries(data || []);
+        } catch (err: any) {
+            showToast('Error cargando el historial: ' + err.message, 'error');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const AUDIT_FIELD_LABELS: Record<string, string> = {
+        type: 'Tipo',
+        start_date: 'Fecha de inicio',
+        end_date: 'Fecha de fin',
+        status: 'Estado',
+        notes: 'Notas',
+        decision_notes: 'Observación de decisión',
+        profile_id: 'Colaborador'
+    };
+
+    const describeChanges = (entry: any) => {
+        if (entry.action === 'delete') return ['Novedad eliminada.'];
+        const before = entry.old_data || {};
+        const after = entry.new_data || {};
+        const changed = Object.keys(AUDIT_FIELD_LABELS).filter(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+        if (changed.length === 0) return ['Sin cambios en los campos visibles.'];
+        return changed.map(k => `${AUDIT_FIELD_LABELS[k]}: "${before[k] ?? '—'}" → "${after[k] ?? '—'}"`);
     };
 
     const handleDelete = async (id: string) => {
@@ -178,7 +269,15 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                         />
                     </div>
                     <button
-                        onClick={() => setIsAdding(!isAdding)}
+                        onClick={() => {
+                            if (isAdding) {
+                                setIsAdding(false);
+                                setEditingId(null);
+                                setFormData({ profile_id: '', type: 'vacaciones', start_date: '', end_date: '', notes: '' });
+                            } else {
+                                setIsAdding(true);
+                            }
+                        }}
                         className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
                     >
                         {isAdding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -272,6 +371,9 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
             {isAdding && (
                 <div className="bg-card border rounded-[2rem] p-8 shadow-xl animate-in fade-in slide-in-from-top-6 duration-500 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-primary/20" />
+                    {editingId && (
+                        <p className="text-[10px] font-black uppercase text-primary tracking-widest mb-4">Editando novedad existente — el cambio queda registrado en el historial</p>
+                    )}
                     <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                             <label className="text-xs font-black uppercase text-muted-foreground tracking-widest pl-1">Colaborador</label>
@@ -332,7 +434,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                         </div>
                         <div className="md:col-span-2 flex justify-end">
                             <button type="submit" className="flex items-center gap-3 px-12 py-4 bg-primary text-primary-foreground rounded-2xl font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
-                                <Save className="w-5 h-5" /> REGISTRAR NOVEDAD
+                                <Save className="w-5 h-5" /> {editingId ? 'GUARDAR CAMBIOS' : 'REGISTRAR NOVEDAD'}
                             </button>
                         </div>
                     </form>
@@ -416,6 +518,20 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                                             </>
                                         )}
                                         <button
+                                            onClick={() => openHistory(req)}
+                                            className="p-3 bg-white/80 backdrop-blur-sm border shadow-sm rounded-2xl text-muted-foreground hover:bg-muted hover:text-foreground transition-all hover:scale-110 active:scale-90"
+                                            title="Ver historial"
+                                        >
+                                            <History className="w-4.5 h-4.5" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleEdit(req)}
+                                            className="p-3 bg-white/80 backdrop-blur-sm border shadow-sm rounded-2xl text-primary hover:bg-primary hover:text-white transition-all hover:scale-110 active:scale-90"
+                                            title="Editar"
+                                        >
+                                            <Pencil className="w-4.5 h-4.5" />
+                                        </button>
+                                        <button
                                             onClick={() => handleDelete(req.id)}
                                             className="p-3 bg-red-50 border border-red-100 shadow-sm rounded-2xl text-destructive hover:bg-destructive hover:text-white transition-all hover:scale-110 active:scale-90"
                                             title="Eliminar"
@@ -430,6 +546,54 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                 </table>
               </div>
             </div>
+
+            {historyFor && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+                    <div className="bg-card w-full max-w-lg rounded-[2rem] border shadow-2xl overflow-hidden animate-in zoom-in slide-in-from-bottom-8 duration-300 max-h-[85vh] flex flex-col">
+                        <div className="p-6 border-b bg-muted/20 flex items-center justify-between shrink-0">
+                            <div>
+                                <h3 className="text-lg font-black uppercase italic">Historial de la Novedad</h3>
+                                <p className="text-xs text-muted-foreground font-bold mt-1">
+                                    {historyFor.InA_profiles?.full_name} · {LEAVE_TYPE_LABELS[historyFor.type as LeaveType]}
+                                </p>
+                            </div>
+                            <button onClick={() => setHistoryFor(null)} className="p-2 hover:bg-muted rounded-full transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4 overflow-y-auto">
+                            {historyLoading ? (
+                                <div className="flex flex-col items-center gap-3 py-10 animate-pulse">
+                                    <div className="w-8 h-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+                                    <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Cargando historial...</p>
+                                </div>
+                            ) : historyEntries.length === 0 ? (
+                                <p className="text-center text-muted-foreground text-xs font-black uppercase tracking-widest opacity-40 italic py-10">
+                                    Sin cambios registrados todavía — se creó y no se ha modificado.
+                                </p>
+                            ) : (
+                                historyEntries.map((entry: any) => (
+                                    <div key={entry.id} className={`p-4 rounded-2xl border-2 ${entry.action === 'delete' ? 'border-red-100 bg-red-50' : 'border-muted bg-muted/10'}`}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                                {entry.InA_profiles?.full_name || 'Administrador'} · {new Date(entry.changed_at).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
+                                            </span>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${entry.action === 'delete' ? 'bg-red-100 text-red-700' : 'bg-primary/10 text-primary'}`}>
+                                                {entry.action === 'delete' ? 'Eliminación' : 'Edición'}
+                                            </span>
+                                        </div>
+                                        <ul className="space-y-1">
+                                            {describeChanges(entry).map((line, i) => (
+                                                <li key={i} className="text-xs font-bold text-foreground">{line}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

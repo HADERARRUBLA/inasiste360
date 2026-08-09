@@ -414,6 +414,21 @@ El usuario preguntó dónde ve el admin las solicitudes que llegan del autoservi
 
 **Verificado:** `tsc`/`build` limpios, app cargando sin errores en pestaña nueva del navegador de pruebas. Pendiente para el usuario: ejecutar `0007_leave_decision_notes.sql` y confirmar visualmente el badge + el modal de decisión.
 
+### Actualización: bug multi-sede en Novedades + edición con historial auditado (2026-08-09)
+El usuario reportó que un empleado de las pruebas multi-sede (Fase 2) no aparecía en Novedades, y pidió poder editar una novedad sin perder trazabilidad (hoy la única corrección posible era eliminar, sin dejar rastro).
+
+**Bug real encontrado y corregido:** `LeaveManagement.tsx` se armó ANTES de que se implementara el fix de visibilidad multi-sede en `EmployeeManagement.tsx` (sesión del mismo día), y nunca se le replicó — su `fetchData` solo traía empleados con `company_id = sede activa`, sin considerar `InA_employee_branches`. Corregido con el mismo patrón de fusión de dos consultas ya usado en `EmployeeManagement.tsx`, aplicado tanto al selector de empleados del formulario como al filtro de la lista de novedades (para que una novedad recién creada para un empleado "de visita" no desaparezca de la vista).
+
+**Edición con auditoría (nuevo):**
+- **`supabase/migrations/0008_leave_request_audit.sql`** (el usuario debe ejecutarla): tabla `InA_leave_request_audit` + un **trigger** `AFTER UPDATE OR DELETE` en `InA_leave_requests` (función `log_leave_request_change`, `SECURITY DEFINER`) que registra automáticamente cada cambio — sin depender de que el frontend "se acuerde" de auditar. Guarda `old_data`/`new_data` como JSONB completo de la fila, quién hizo el cambio (resuelto desde `auth.uid()`), y `organization_id` **desnormalizado** (no depende de que el registro original siga existiendo) para que la traza sobreviva incluso si la novedad se elimina — eso es justo lo que preocupaba al usuario ("no quedaría trazabilidad"). RLS de solo lectura por organización; nadie escribe ahí directo, solo el trigger.
+- **`LeaveManagement.tsx`**: botón "Editar" (reutiliza el mismo formulario de creación, precargado) y botón "Ver Historial" por fila, que abre un modal listando cada cambio (quién, cuándo, qué campo cambió de qué a qué) leyendo de la tabla de auditoría.
+
+**Verificado:** `npx tsc --noEmit` y `npm run build` limpios, app cargando sin errores en pestaña nueva. **Pendiente para el usuario:**
+1. Ejecutar `0008_leave_request_audit.sql` en Supabase DEV.
+2. Confirmar que el empleado multi-sede ya aparece en el selector de Novedades al ver la sede donde está "de visita".
+3. Editar una novedad existente y confirmar que el historial muestra el cambio con el detalle correcto.
+4. Eliminar una novedad de prueba y confirmar (vía SQL Editor, consultando `InA_leave_request_audit`) que quedó el registro de la eliminación aunque la fila original ya no exista.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente

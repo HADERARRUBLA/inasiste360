@@ -119,3 +119,15 @@ export interface LeaveRequest {
     created_at?: string;
     InA_profiles?: Profile;
 }
+
+export interface LeaveRequestAudit {
+    id: string;
+    leave_request_id: string | null;
+    organization_id: string;
+    action: 'update' | 'delete';
+    changed_by: string | null;
+    changed_at: string;
+    old_data: Record<string, any> | null;
+    new_data: Record<string, any> | null;
+    InA_profiles?: Profile;
+}
