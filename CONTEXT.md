@@ -429,6 +429,13 @@ El usuario reportó que un empleado de las pruebas multi-sede (Fase 2) no aparec
 3. Editar una novedad existente y confirmar que el historial muestra el cambio con el detalle correcto.
 4. Eliminar una novedad de prueba y confirmar (vía SQL Editor, consultando `InA_leave_request_audit`) que quedó el registro de la eliminación aunque la fila original ya no exista.
 
+### Actualización: panel "Ausencias de Hoy" en el dashboard (2026-08-09)
+El usuario preguntó si las novedades deberían aparecer en las alertas del dashboard para dar contexto de por qué falta alguien. Se revisó el código de alertas y hoy solo existen 2 tipos (`Llegada Tarde`, `Alerta Horas Extras`) — todavía no hay una alerta de "ausencia/no marcó", así que no había riesgo inmediato de falsos positivos. Aun así, se implementó un panel **informativo** (no una alerta — deliberadamente con estilo azul neutral, no rojo/ámbar) en `AdminDashboard.tsx`: "N Colaboradores con Ausencia Justificada Hoy", listando a quién y qué tipo de novedad aprobada cubre la fecha de hoy, scopeado igual que `LeaveManagement.tsx` (sede principal + empleados "de visita" multi-sede).
+
+**Decisión explícita de alcance:** no se tocó el fetch principal de `profiles` en `AdminDashboard.tsx` (línea ~70), que **también tiene el mismo gap de multi-sede** (`eq('company_id', companyId)` sin considerar `InA_employee_branches`) — pero ese fetch alimenta todo el cálculo de horas/costos/alertas existente, y ampliarlo cambiaría de qué sede "cuentan" las horas de un empleado multi-sede para nómina, una decisión de negocio que no se ha confirmado con el usuario (a diferencia de la visibilidad, que sí). Se dejó anotado aquí para no perderlo — probablemente hay que resolverlo como parte de la Fase 4 (nómina avanzada), cuando se defina explícitamente ese comportamiento.
+
+**Verificado:** `tsc`/`build` limpios, app cargando sin errores en pestaña nueva. Pendiente para el usuario: confirmar visualmente el panel con un empleado que tenga una novedad aprobada cubriendo la fecha de hoy.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente

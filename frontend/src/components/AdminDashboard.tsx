@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import {
     FileDown, Search, Users, Clock,
     CheckCircle, TrendingUp, AlertTriangle,
-    MoreHorizontal, ArrowUpRight, ArrowDownRight, Trash2
+    MoreHorizontal, ArrowUpRight, ArrowDownRight, Trash2, CalendarOff
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -21,6 +21,18 @@ interface AdminDashboardProps {
 
 const dayMap: Record<number, string> = {
     0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat'
+};
+
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+    vacaciones: 'Vacaciones',
+    incapacidad_eps: 'Incapacidad EPS',
+    incapacidad_arl: 'Incapacidad ARL',
+    permiso_remunerado: 'Permiso Remunerado',
+    permiso_no_remunerado: 'Permiso No Remunerado',
+    licencia_maternidad: 'Licencia de Maternidad',
+    licencia_paternidad: 'Licencia de Paternidad',
+    luto: 'Luto',
+    otro: 'Otro'
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view = 'analytics' }) => {
@@ -42,6 +54,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
     }, [view]);
 
     const [company, setCompany] = useState<any>(null);
+    const [approvedLeaves, setApprovedLeaves] = useState<any[]>([]);
+
+    // Novedades aprobadas de esta sede (principal + "de visita" multi-sede,
+    // mismo patrón que EmployeeManagement/LeaveManagement) — se usan para el
+    // panel informativo "Ausencias de Hoy", independiente del resto del
+    // cálculo de nómina/horas.
+    useEffect(() => {
+        const fetchApprovedLeaves = async () => {
+            if (!companyId) { setApprovedLeaves([]); return; }
+            const { data: primaryEmps } = await supabase
+                .from('InA_profiles').select('id').eq('company_id', companyId).eq('role', 'employee');
+            const { data: visitingEmps } = await supabase
+                .from('InA_profiles')
+                .select('id, assigned_branches:InA_employee_branches!inner(branch_id)')
+                .eq('role', 'employee')
+                .eq('assigned_branches.branch_id', companyId);
+            const scopedIds = new Set([...(primaryEmps || []).map((e: any) => e.id), ...(visitingEmps || []).map((e: any) => e.id)]);
+
+            const { data: leaves, error } = await supabase
+                .from('InA_leave_requests')
+                .select('*, InA_profiles!profile_id(full_name)')
+                .eq('status', 'approved');
+            if (error) { console.error('Error cargando novedades aprobadas:', error); return; }
+            setApprovedLeaves((leaves || []).filter((l: any) => scopedIds.has(l.profile_id)));
+        };
+        fetchApprovedLeaves();
+    }, [companyId]);
+
+    const todayAbsences = useMemo(() => {
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        return approvedLeaves.filter(l => l.start_date <= todayStr && l.end_date >= todayStr);
+    }, [approvedLeaves]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -618,6 +662,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                             </div>
                         </div>
                     </div>
+
+                    {/* Ausencias de Hoy — informativo, no es una alerta */}
+                    {todayAbsences.length > 0 && (
+                        <div className="bg-blue-50 border-2 border-blue-100 rounded-[2rem] p-8 space-y-4">
+                            <div className="flex items-center gap-2 text-blue-800">
+                                <CalendarOff className="w-5 h-5" />
+                                <h3 className="font-black uppercase text-sm tracking-widest">
+                                    {todayAbsences.length} Colaborador{todayAbsences.length > 1 ? 'es' : ''} con Ausencia Justificada Hoy
+                                </h3>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {todayAbsences.map((leave: any) => (
+                                    <div key={leave.id} className="bg-white rounded-2xl p-4 border border-blue-100">
+                                        <p className="font-black text-sm text-foreground">{leave.InA_profiles?.full_name || 'N/A'}</p>
+                                        <p className="text-[10px] font-black uppercase text-blue-700 mt-1">{LEAVE_TYPE_LABELS[leave.type] || leave.type}</p>
+                                        <p className="text-[10px] text-muted-foreground font-bold mt-1">Hasta {leave.end_date}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Table Section */}
                     <div className="bg-card border rounded-[2rem] shadow-sm overflow-hidden">
