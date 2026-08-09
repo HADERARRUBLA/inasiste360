@@ -114,7 +114,12 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                     ...company,
                     lat_long: formatted
                 });
-                setStatus({ type: 'success', msg: `Ubicación GPS capturada correctamente. Precisión: ±${Math.round(pos.coords.accuracy)}m` });
+                // Precisión > 150m suele ser geolocalización por IP/red, no GPS real.
+                if (pos.coords.accuracy > 150) {
+                    setStatus({ type: 'error', msg: `Ubicación aproximada (baja precisión: ±${Math.round(pos.coords.accuracy)}m). Es probable que tu navegador no tenga GPS real disponible y esté usando tu red/IP. Ajusta el punto manualmente en el mapa o busca la dirección exacta.` });
+                } else {
+                    setStatus({ type: 'success', msg: `Ubicación GPS capturada correctamente. Precisión: ±${Math.round(pos.coords.accuracy)}m` });
+                }
             },
             () => setStatus({ type: 'error', msg: 'Error de GPS. Verifica permisos.' })
         );

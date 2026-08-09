@@ -345,6 +345,11 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                     <div className="text-[10px] opacity-90 uppercase tracking-[0.2em] font-black bg-white/10 px-4 py-2 rounded-full">
                         {geoError ? geoError : `Distancia: ${Math.round(distance || 0)}m / Máx: ${radiusMeters}m`}
                     </div>
+                    {!geoError && (distance || 0) > 5000 && (
+                        <p className="text-[10px] opacity-80 text-center max-w-xs font-medium normal-case">
+                            Esta distancia es demasiado grande para ser un simple desvío — probablemente el dispositivo no tiene GPS real activo y está usando ubicación por red/IP. Revisa que el GPS esté encendido y los permisos de ubicación concedidos.
+                        </p>
+                    )}
                     <button
                         onClick={refreshLocation}
                         className="flex items-center gap-2 px-6 py-2 bg-white text-destructive rounded-xl text-xs font-black hover:bg-white/90 transition-all active:scale-95"

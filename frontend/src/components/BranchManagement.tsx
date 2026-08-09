@@ -86,11 +86,17 @@ export const BranchManagement: React.FC<BranchManagementProps> = ({ onSave }) =>
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                const { latitude, longitude } = position.coords;
+                const { latitude, longitude, accuracy } = position.coords;
                 const formatted = formatLatLng(latitude, longitude);
                 setFormData(prev => ({ ...prev, lat_long: formatted }));
-                // Mostrar la precisión obtenida en el estado de status:
-                setStatus({ type: 'success', msg: `GPS capturado. Precisión: ±${Math.round(position.coords.accuracy)}m` });
+                // Precisión > 150m suele ser geolocalización por IP/red, no GPS real:
+                // se deja el punto como referencia inicial, pero se avisa para que se
+                // ajuste manualmente (arrastrando el pin o buscando la dirección exacta).
+                if (accuracy > 150) {
+                    setStatus({ type: 'error', msg: `Ubicación aproximada (baja precisión: ±${Math.round(accuracy)}m). Es probable que tu navegador no tenga GPS real disponible y esté usando tu red/IP. Ajusta el punto manualmente en el mapa o busca la dirección exacta.` });
+                } else {
+                    setStatus({ type: 'success', msg: `GPS capturado. Precisión: ±${Math.round(accuracy)}m` });
+                }
                 setIsGettingLocation(false);
             },
             (error) => {
