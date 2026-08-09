@@ -406,6 +406,14 @@ Primer módulo de novedades: vacaciones, incapacidades (EPS/ARL), permisos (remu
 2. Probar el flujo completo: Kiosko → PIN → "Solicitar Vacaciones o Permiso" → enviar → confirmar que aparece como "Pendiente" en `LeaveManagement.tsx` → Aprobar/Rechazar desde el panel admin.
 3. Confirmar que intentar pedir una incapacidad vía RPC directo (con un `p_type` no permitido) es rechazado por la validación del servidor, no solo por la UI.
 
+### Actualización: visibilidad de pendientes + observación de decisión (2026-08-09)
+El usuario preguntó dónde ve el admin las solicitudes que llegan del autoservicio, y pidió poder dejar constancia del motivo al aprobar/rechazar. Se agregó:
+- **`supabase/migrations/0007_leave_decision_notes.sql`** (el usuario debe ejecutarla): columna `InA_leave_requests.decision_notes`, separada del `notes` original de la solicitud (que describe el pedido, no la decisión).
+- **`LeaveManagement.tsx`**: sección ámbar destacada "N Solicitudes Pendientes de Aprobación" arriba de la tabla (solo aparece si hay pendientes), y un modal de confirmación al aprobar/rechazar que pide una observación — **obligatoria en rechazos**, opcional en aprobaciones. La tabla también muestra la observación de decisión (↳) debajo de la nota original cuando existe.
+- **`App.tsx`**: badge numérico ámbar en la pestaña "Novedades" del menú con el conteo de pendientes de la sede activa — visible desde cualquier pantalla, se carga al iniciar sesión/cambiar de sede (consulta propia, independiente de haber visitado el módulo) y se actualiza en vivo vía la prop `onPendingCountChange` cada vez que `LeaveManagement` refresca sus datos (crear, aprobar, rechazar, eliminar).
+
+**Verificado:** `tsc`/`build` limpios, app cargando sin errores en pestaña nueva del navegador de pruebas. Pendiente para el usuario: ejecutar `0007_leave_decision_notes.sql` y confirmar visualmente el badge + el modal de decisión.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { LeaveRequest, LeaveType } from '../types';
-import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle } from 'lucide-react';
+import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
 
 interface LeaveManagementProps {
     companyId: string | null;
     currentProfileId: string | null;
+    onPendingCountChange?: (count: number) => void;
 }
 
 const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -27,12 +28,14 @@ const daysBetween = (start: string, end: string) => {
     return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
 };
 
-export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, currentProfileId }) => {
+export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, currentProfileId, onPendingCountChange }) => {
     const [requests, setRequests] = useState<any[]>([]);
     const [employees, setEmployees] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [reviewing, setReviewing] = useState<{ request: any, action: 'approved' | 'rejected' } | null>(null);
+    const [decisionNotes, setDecisionNotes] = useState('');
 
     const [formData, setFormData] = useState({
         profile_id: '',
@@ -47,7 +50,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
     }, [companyId]);
 
     const fetchData = async () => {
-        if (!companyId) { setLoading(false); return; }
+        if (!companyId) { setLoading(false); onPendingCountChange?.(0); return; }
         setLoading(true);
         try {
             const { data: emps, error: empError } = await supabase
@@ -64,7 +67,9 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                 .select('*, InA_profiles!profile_id(id, full_name, national_id, company_id)')
                 .order('start_date', { ascending: false });
             if (reqError) throw reqError;
-            setRequests((reqs || []).filter((r: any) => r.InA_profiles?.company_id === companyId));
+            const scoped = (reqs || []).filter((r: any) => r.InA_profiles?.company_id === companyId);
+            setRequests(scoped);
+            onPendingCountChange?.(scoped.filter((r: any) => r.status === 'pending').length);
         } catch (err: any) {
             console.error('Error cargando novedades:', err);
             showToast('Error cargando novedades: ' + err.message, 'error');
@@ -120,31 +125,37 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
         fetchData();
     };
 
-    const handleApprove = async (id: string) => {
-        const { error } = await supabase
-            .from('InA_leave_requests')
-            .update({ status: 'approved', approved_by: currentProfileId })
-            .eq('id', id);
-        if (error) {
-            showToast('Error al aprobar: ' + error.message, 'error');
+    const openReview = (request: any, action: 'approved' | 'rejected') => {
+        setReviewing({ request, action });
+        setDecisionNotes('');
+    };
+
+    const submitDecision = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!reviewing) return;
+        if (reviewing.action === 'rejected' && !decisionNotes.trim()) {
+            showToast('Escribe el motivo del rechazo.', 'error');
             return;
         }
-        showToast('Novedad aprobada.', 'success');
+        const { error } = await supabase
+            .from('InA_leave_requests')
+            .update({
+                status: reviewing.action,
+                approved_by: currentProfileId,
+                decision_notes: decisionNotes.trim() || null
+            })
+            .eq('id', reviewing.request.id);
+        if (error) {
+            showToast('Error al guardar la decisión: ' + error.message, 'error');
+            return;
+        }
+        showToast(reviewing.action === 'approved' ? 'Novedad aprobada.' : 'Novedad rechazada.', 'success');
+        setReviewing(null);
+        setDecisionNotes('');
         fetchData();
     };
 
-    const handleReject = async (id: string) => {
-        const { error } = await supabase
-            .from('InA_leave_requests')
-            .update({ status: 'rejected', approved_by: currentProfileId })
-            .eq('id', id);
-        if (error) {
-            showToast('Error al rechazar: ' + error.message, 'error');
-            return;
-        }
-        showToast('Novedad rechazada.', 'success');
-        fetchData();
-    };
+    const pendingRequests = requests.filter((r: any) => r.status === 'pending');
 
     return (
         <div className="space-y-6">
@@ -175,6 +186,88 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                     </button>
                 </div>
             </div>
+
+            {pendingRequests.length > 0 && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-[2rem] p-6 space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="flex items-center gap-2 text-amber-800">
+                        <AlertCircle className="w-5 h-5" />
+                        <h3 className="font-black uppercase text-sm tracking-widest">{pendingRequests.length} Solicitud{pendingRequests.length > 1 ? 'es' : ''} Pendiente{pendingRequests.length > 1 ? 's' : ''} de Aprobación</h3>
+                    </div>
+                    <div className="space-y-3">
+                        {pendingRequests.map((req: any) => (
+                            <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-2xl p-4 border border-amber-100">
+                                <div>
+                                    <p className="font-black text-foreground text-sm">{req.InA_profiles?.full_name || 'N/A'}</p>
+                                    <p className="text-xs text-muted-foreground font-bold">
+                                        {LEAVE_TYPE_LABELS[req.type as LeaveType] || req.type} · {req.start_date} → {req.end_date} ({daysBetween(req.start_date, req.end_date)} días)
+                                    </p>
+                                    {req.notes && <p className="text-xs text-muted-foreground italic mt-1">"{req.notes}"</p>}
+                                </div>
+                                <div className="flex gap-2 shrink-0">
+                                    <button
+                                        onClick={() => openReview(req, 'approved')}
+                                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase hover:bg-green-700 transition-all active:scale-95"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4" /> Aprobar
+                                    </button>
+                                    <button
+                                        onClick={() => openReview(req, 'rejected')}
+                                        className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-amber-300 text-amber-700 rounded-xl font-black text-[10px] uppercase hover:bg-amber-100 transition-all active:scale-95"
+                                    >
+                                        <XCircle className="w-4 h-4" /> Rechazar
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {reviewing && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+                    <div className="bg-card w-full max-w-md rounded-[2rem] border shadow-2xl overflow-hidden animate-in zoom-in slide-in-from-bottom-8 duration-300">
+                        <div className={`p-6 border-b ${reviewing.action === 'approved' ? 'bg-green-50' : 'bg-amber-50'}`}>
+                            <h3 className="text-lg font-black uppercase italic">
+                                {reviewing.action === 'approved' ? 'Aprobar Novedad' : 'Rechazar Novedad'}
+                            </h3>
+                            <p className="text-xs text-muted-foreground font-bold mt-1">
+                                {reviewing.request.InA_profiles?.full_name} · {LEAVE_TYPE_LABELS[reviewing.request.type as LeaveType]} · {reviewing.request.start_date} → {reviewing.request.end_date}
+                            </p>
+                        </div>
+                        <form onSubmit={submitDecision} className="p-6 space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">
+                                    Observación {reviewing.action === 'rejected' ? '(obligatoria)' : '(opcional)'}
+                                </label>
+                                <textarea
+                                    required={reviewing.action === 'rejected'}
+                                    autoFocus
+                                    value={decisionNotes}
+                                    onChange={e => setDecisionNotes(e.target.value)}
+                                    rows={4}
+                                    className="w-full px-4 py-3 border-2 rounded-2xl bg-background outline-none focus:border-primary font-bold text-sm resize-none"
+                                    placeholder={reviewing.action === 'approved' ? 'Ej: Coordinado con el equipo para cubrir el turno.' : 'Ej: No hay personal disponible para cubrir esas fechas.'}
+                                />
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setReviewing(null)}
+                                    className="flex-1 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-muted transition-colors border"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className={`flex-1 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest text-white transition-all active:scale-95 ${reviewing.action === 'approved' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+                                >
+                                    Confirmar {reviewing.action === 'approved' ? 'Aprobación' : 'Rechazo'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {isAdding && (
                 <div className="bg-card border rounded-[2rem] p-8 shadow-xl animate-in fade-in slide-in-from-top-6 duration-500 relative overflow-hidden">
@@ -296,20 +389,25 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                                         {req.status === 'pending' ? 'Pendiente' : req.status === 'approved' ? 'Aprobada' : 'Rechazada'}
                                     </span>
                                 </td>
-                                <td className="px-8 py-6 text-xs text-muted-foreground max-w-xs truncate">{req.notes || '---'}</td>
+                                <td className="px-8 py-6 text-xs text-muted-foreground max-w-xs">
+                                    <p className="truncate">{req.notes || '---'}</p>
+                                    {req.decision_notes && (
+                                        <p className="truncate italic text-[11px] mt-1 opacity-70">↳ {req.decision_notes}</p>
+                                    )}
+                                </td>
                                 <td className="px-8 py-6 text-right">
                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
                                         {req.status === 'pending' && (
                                             <>
                                                 <button
-                                                    onClick={() => handleApprove(req.id)}
+                                                    onClick={() => openReview(req, 'approved')}
                                                     className="p-3 bg-green-50 border border-green-100 shadow-sm rounded-2xl text-green-600 hover:bg-green-600 hover:text-white transition-all hover:scale-110 active:scale-90"
                                                     title="Aprobar"
                                                 >
                                                     <CheckCircle2 className="w-4.5 h-4.5" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleReject(req.id)}
+                                                    onClick={() => openReview(req, 'rejected')}
                                                     className="p-3 bg-amber-50 border border-amber-100 shadow-sm rounded-2xl text-amber-600 hover:bg-amber-600 hover:text-white transition-all hover:scale-110 active:scale-90"
                                                     title="Rechazar"
                                                 >

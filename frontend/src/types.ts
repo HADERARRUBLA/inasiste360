@@ -112,6 +112,7 @@ export interface LeaveRequest {
     end_date: string;
     status: LeaveStatus;
     notes?: string | null;
+    decision_notes?: string | null;
     attachment_url?: string | null;
     requested_by?: string | null;
     approved_by?: string | null;

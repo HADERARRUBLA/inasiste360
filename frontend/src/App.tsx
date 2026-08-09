@@ -33,10 +33,27 @@ function App() {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [recoveryStatus, setRecoveryStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
   const currentCompany = useMemo(() =>
     companies.find(c => c.id === selectedCompanyId) || null
     , [companies, selectedCompanyId]);
+
+  // Contador de novedades pendientes para el badge del menú — se refresca al
+  // cambiar de sede y en vivo mientras el admin está en la pestaña Novedades
+  // (LeaveManagement llama a onPendingCountChange después de cada acción).
+  useEffect(() => {
+    if (!selectedCompanyId) { setPendingLeaveCount(0); return; }
+    const loadPendingCount = async () => {
+      const { data } = await supabase
+        .from('InA_leave_requests')
+        .select('id, status, InA_profiles!profile_id(company_id)')
+        .eq('status', 'pending');
+      const count = (data || []).filter((r: any) => r.InA_profiles?.company_id === selectedCompanyId).length;
+      setPendingLeaveCount(count);
+    };
+    loadPendingCount();
+  }, [selectedCompanyId]);
 
   // Carga las sedes visibles para el perfil autenticado (RLS filtra automáticamente
   // por organización si el rol no es superadmin) y fija la sede activa.
@@ -432,9 +449,14 @@ function App() {
             </button>
             <button
               onClick={() => selectTab('leaves')}
-              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'leaves' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
+              className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all relative ${activeTab === 'leaves' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
             >
               <CalendarOff className="w-4 h-4" /> Novedades
+              {pendingLeaveCount > 0 && (
+                <span className="ml-auto flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 bg-amber-500 text-white text-[10px] font-black rounded-full">
+                  {pendingLeaveCount}
+                </span>
+              )}
             </button>
             <button
               onClick={() => selectTab('audit')}
@@ -498,7 +520,7 @@ function App() {
             ) : activeTab === 'employees' ? (
               <EmployeeManagement companyId={selectedCompanyId} />
             ) : activeTab === 'leaves' ? (
-              <LeaveManagement companyId={selectedCompanyId} currentProfileId={userProfile?.id || null} />
+              <LeaveManagement companyId={selectedCompanyId} currentProfileId={userProfile?.id || null} onPendingCountChange={setPendingLeaveCount} />
             ) : activeTab === 'audit' ? (
               <AuditSystem companyId={selectedCompanyId} />
             ) : activeTab === 'config' ? (
