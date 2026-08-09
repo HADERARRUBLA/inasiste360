@@ -43,6 +43,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
     const webcamRef = useRef<Webcam>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [trackReferenceSchedule, setTrackReferenceSchedule] = useState(false);
 
     // Form state
     const [formData, setFormData] = useState({
@@ -183,6 +184,9 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             organization_id: profile.organization_id || null,
             managed_branches: (profile as any).assigned_branches?.map((b: any) => b.branch_id) || []
         });
+        setTrackReferenceSchedule(
+            profile.schedule_mode === 'open' && Object.values(profile.work_schedule || {}).some((d: any) => d?.active)
+        );
         setEditingId(profile.id);
         setFaceCaptures([]);
         setIsAdding(true);
@@ -272,6 +276,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             setIsAdding(false);
             setEditingId(null);
             setFaceCaptures([]);
+            setTrackReferenceSchedule(false);
             setFormData(prev => ({
                 ...prev,
                 full_name: '',
@@ -428,6 +433,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                             setEditingId(null);
                             setFaceCaptures([]);
                             setIsCameraActive(false);
+                            setTrackReferenceSchedule(false);
                         }}
                         className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
                     >
@@ -633,68 +639,35 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                             <p className="text-[9px] text-muted-foreground font-bold uppercase">≈ {(formData.open_max_ordinary_minutes / 60).toFixed(1)} horas desde la primera marcación del día</p>
                                         </div>
                                     )}
+
+                                    <label className="flex items-center gap-3 p-4 border-2 border-dashed rounded-2xl cursor-pointer bg-white">
+                                        <input
+                                            type="checkbox"
+                                            className="w-4 h-4 accent-primary"
+                                            checked={trackReferenceSchedule}
+                                            onChange={e => {
+                                                const checked = e.target.checked;
+                                                setTrackReferenceSchedule(checked);
+                                                if (!checked) {
+                                                    const cleared = Object.fromEntries(Object.keys(DEFAULT_SCHEDULE).map(day => [day, { ...(formData.work_schedule?.[day] || (DEFAULT_SCHEDULE as any)[day]), active: false }]));
+                                                    setFormData(prev => ({ ...prev, work_schedule: cleared }));
+                                                }
+                                            }}
+                                        />
+                                        <span className="text-xs font-black uppercase tracking-widest">Definir horario de referencia (solo seguimiento de puntualidad, no afecta nómina)</span>
+                                    </label>
+                                    {trackReferenceSchedule && (
+                                        <WeeklyScheduleGrid
+                                            schedule={formData.work_schedule}
+                                            onChange={newSched => setFormData({ ...formData, work_schedule: newSched })}
+                                        />
+                                    )}
                                 </div>
                             ) : formData.schedule_mode === 'custom' ? (
-                                <div className="space-y-3 animate-in fade-in zoom-in duration-300">
-                                    <div className="grid grid-cols-12 gap-4 px-4 py-2 text-[8px] font-black uppercase text-muted-foreground tracking-widest border-b border-primary/5">
-                                        <div className="col-span-3">Día</div>
-                                        <div className="col-span-1 text-center">Activo</div>
-                                        <div className="col-span-4 text-center">Entrada</div>
-                                        <div className="col-span-4 text-center">Salida</div>
-                                    </div>
-                                    {Object.keys(DEFAULT_SCHEDULE).map((day) => {
-                                        const dayData = formData.work_schedule?.[day] || (DEFAULT_SCHEDULE as any)[day];
-                                        return (
-                                            <div key={day} className={`grid grid-cols-12 gap-4 items-center p-3 border rounded-2xl transition-all ${dayData?.active ? 'bg-primary/5 border-primary/10' : 'opacity-40 bg-muted/5 border-transparent'}`}>
-                                                <div className="col-span-3 font-black text-[11px] uppercase tracking-tight">{dayNames[day]}</div>
-                                                <div className="col-span-1 flex justify-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={dayData?.active || false}
-                                                        onChange={e => {
-                                                            const newSched = {
-                                                                ...formData.work_schedule,
-                                                                [day]: { ...(dayData || {}), active: e.target.checked }
-                                                            };
-                                                            setFormData({ ...formData, work_schedule: newSched });
-                                                        }}
-                                                        className="w-4 h-4 accent-primary"
-                                                    />
-                                                </div>
-                                                <div className="col-span-4">
-                                                    <input
-                                                        type="time"
-                                                        disabled={!dayData?.active}
-                                                        value={dayData?.start || '08:00'}
-                                                        onChange={e => {
-                                                            const newSched = {
-                                                                ...formData.work_schedule,
-                                                                [day]: { ...(dayData || {}), start: e.target.value }
-                                                            };
-                                                            setFormData({ ...formData, work_schedule: newSched });
-                                                        }}
-                                                        className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
-                                                    />
-                                                </div>
-                                                <div className="col-span-4">
-                                                    <input
-                                                        type="time"
-                                                        disabled={!dayData?.active}
-                                                        value={dayData?.end || '17:00'}
-                                                        onChange={e => {
-                                                            const newSched = {
-                                                                ...formData.work_schedule,
-                                                                [day]: { ...(dayData || {}), end: e.target.value }
-                                                            };
-                                                            setFormData({ ...formData, work_schedule: newSched });
-                                                        }}
-                                                        className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                <WeeklyScheduleGrid
+                                    schedule={formData.work_schedule}
+                                    onChange={newSched => setFormData({ ...formData, work_schedule: newSched })}
+                                />
                             ) : (
                                 <div className="p-6 bg-white border rounded-2xl text-center border-dashed">
                                     <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest italic">Este colaborador sigue el horario estándar definido para la sede.</p>
@@ -865,6 +838,51 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         </div>
     );
 };
+
+const WeeklyScheduleGrid = ({ schedule, onChange }: { schedule: any, onChange: (newSched: any) => void }) => (
+    <div className="space-y-3 animate-in fade-in zoom-in duration-300">
+        <div className="grid grid-cols-12 gap-4 px-4 py-2 text-[8px] font-black uppercase text-muted-foreground tracking-widest border-b border-primary/5">
+            <div className="col-span-3">Día</div>
+            <div className="col-span-1 text-center">Activo</div>
+            <div className="col-span-4 text-center">Entrada</div>
+            <div className="col-span-4 text-center">Salida</div>
+        </div>
+        {Object.keys(DEFAULT_SCHEDULE).map((day) => {
+            const dayData = schedule?.[day] || (DEFAULT_SCHEDULE as any)[day];
+            return (
+                <div key={day} className={`grid grid-cols-12 gap-4 items-center p-3 border rounded-2xl transition-all ${dayData?.active ? 'bg-primary/5 border-primary/10' : 'opacity-40 bg-muted/5 border-transparent'}`}>
+                    <div className="col-span-3 font-black text-[11px] uppercase tracking-tight">{dayNames[day]}</div>
+                    <div className="col-span-1 flex justify-center">
+                        <input
+                            type="checkbox"
+                            checked={dayData?.active || false}
+                            onChange={e => onChange({ ...schedule, [day]: { ...(dayData || {}), active: e.target.checked } })}
+                            className="w-4 h-4 accent-primary"
+                        />
+                    </div>
+                    <div className="col-span-4">
+                        <input
+                            type="time"
+                            disabled={!dayData?.active}
+                            value={dayData?.start || '08:00'}
+                            onChange={e => onChange({ ...schedule, [day]: { ...(dayData || {}), start: e.target.value } })}
+                            className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                        />
+                    </div>
+                    <div className="col-span-4">
+                        <input
+                            type="time"
+                            disabled={!dayData?.active}
+                            value={dayData?.end || '17:00'}
+                            onChange={e => onChange({ ...schedule, [day]: { ...(dayData || {}), end: e.target.value } })}
+                            className="w-full px-3 py-2 border rounded-xl bg-background font-bold text-sm outline-none focus:border-primary"
+                        />
+                    </div>
+                </div>
+            );
+        })}
+    </div>
+);
 
 const SearchInput = ({ value, onChange }: { value: string, onChange: (v: string) => void }) => (
     <div className="relative group">

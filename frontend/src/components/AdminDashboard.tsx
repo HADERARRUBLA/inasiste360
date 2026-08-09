@@ -148,11 +148,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         shiftGroups.forEach(group => {
             const { profileId, dateKey: dateStr, entries: dayEntries } = group;
             const profile = profiles.find(p => p.id === profileId);
-            if (!profile || profile.schedule_mode === 'open') return; // sin horario fijo, no aplica "llegada tarde"
+            if (!profile) return;
 
             const dateObj = new Date(dateStr + 'T12:00:00');
             const dayCode = dayMap[dateObj.getDay()];
-            const profileSched = profile.schedule_mode === 'custom' ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+            // 'branch' compara contra el horario de la sede. 'custom' y 'open'
+            // comparan contra el horario propio del perfil — en 'open' esto es
+            // un horario de referencia OPCIONAL (solo seguimiento de
+            // puntualidad, nunca afecta el cálculo de nómina/extra). Si no se
+            // definió ninguna franja activa, `profileSched?.active` da falso
+            // y simplemente no hay seguimiento para ese día, como hoy.
+            const profileSched = profile.schedule_mode === 'branch' ? (company?.work_schedule?.[dayCode]) : (profile.work_schedule?.[dayCode]);
 
             if (profileSched?.active) {
                 const firstIn = getFirstInTime(dayEntries);
