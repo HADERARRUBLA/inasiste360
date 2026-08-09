@@ -111,15 +111,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 if (entryError) throw entryError;
                 setEntries(entryData || []);
 
-                // Fetch Full Profiles
-                const { data: profileData, error: profileError } = await supabase
+                // Fetch Full Profiles: sede principal + empleados "de visita"
+                // multi-sede (mismo patrón ya usado en EmployeeManagement.tsx
+                // y LeaveManagement.tsx) — sin esto, las horas trabajadas por
+                // un empleado multi-sede en esta sede no se contaban en
+                // ningún dashboard de nómina.
+                const { data: primaryProfiles, error: profileError } = await supabase
                     .from('InA_profiles')
                     .select('*')
                     .eq('company_id', companyId)
                     .order('full_name');
-
                 if (profileError) throw profileError;
-                setProfiles(profileData || []);
+
+                const { data: visitingProfiles, error: visitingError } = await supabase
+                    .from('InA_profiles')
+                    .select('*, assigned_branches:InA_employee_branches!inner(branch_id)')
+                    .eq('assigned_branches.branch_id', companyId);
+                if (visitingError) throw visitingError;
+
+                const mergedProfiles = [...(primaryProfiles || [])];
+                (visitingProfiles || []).forEach((v: any) => {
+                    if (!mergedProfiles.find(p => p.id === v.id)) mergedProfiles.push(v);
+                });
+                mergedProfiles.sort((a, b) => a.full_name.localeCompare(b.full_name));
+                setProfiles(mergedProfiles);
 
             } catch (err) {
                 console.error('Error fetching dashboard data:', err);
@@ -179,7 +194,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 extraDay: 0,
                 extraNight: 0,
                 extraSunday: 0,
-                totalCost: 0
+                totalCost: 0,
+                unjustifiedAbsences: 0
             };
         });
 
@@ -229,6 +245,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 }
             }
         });
+
+        // 3.5 Ausencias no justificadas: día con horario activo, sin ninguna
+        // marcación ese día, y sin una novedad aprobada (InA_leave_requests)
+        // que cubra la fecha. Nunca se evalúan días futuros.
+        {
+            const shiftGroupKeys = new Set(shiftGroups.map(g => `${g.profileId}_${g.dateKey}`));
+            const rangeEnd = dateRange.end < todayStr ? dateRange.end : todayStr;
+            for (let d = new Date(dateRange.start + 'T12:00:00'); d.toLocaleDateString('en-CA') <= rangeEnd; d.setDate(d.getDate() + 1)) {
+                const dStr = d.toLocaleDateString('en-CA');
+                const dayCode = dayMap[d.getDay()];
+                profiles.forEach(profile => {
+                    const sched = profile.schedule_mode === 'branch' ? company?.work_schedule?.[dayCode] : profile.work_schedule?.[dayCode];
+                    if (!sched?.active) return;
+                    if (shiftGroupKeys.has(`${profile.id}_${dStr}`)) return;
+                    const onLeave = approvedLeaves.some((l: any) => l.profile_id === profile.id && l.start_date <= dStr && l.end_date >= dStr);
+                    if (onLeave) return;
+
+                    userSummaries[profile.id].unjustifiedAbsences++;
+                    if (dStr === todayStr) {
+                        alertEntries.push({
+                            name: profile.full_name,
+                            type: 'Ausencia No Justificada',
+                            desc: `No registró marcación (${dStr})`,
+                            time: '--:--',
+                            severity: 'error'
+                        });
+                    }
+                });
+            }
+        }
 
         // 4. Payroll & Breakdown Calculation
         let estimatedCost = 0;
@@ -334,7 +380,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             alerts: alertEntries,
             userSummaries
         };
-    }, [entries, profiles, company, dateRange, selectedProfileId]);
+    }, [entries, profiles, company, dateRange, selectedProfileId, approvedLeaves]);
 
     const chartData = useMemo(() => {
         const start = new Date(dateRange.start + 'T00:00:00');
@@ -446,10 +492,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         ]);
 
         // 2. Summary Sheet
-        const summaryHeaders = ['Colaborador', 'ID', 'Min. Trabajo', 'Desayuno (min)', 'Almuerzo (min)', 'P. Activa (min)', 'Otros/Pausas (min)', 'HE Diurna', 'HE Nocturna', 'Extra Dominical', 'Tardanzas (veces)', 'Coste Proyectado'];
+        const summaryHeaders = ['Colaborador', 'ID', 'Min. Trabajo', 'Desayuno (min)', 'Almuerzo (min)', 'P. Activa (min)', 'Otros/Pausas (min)', 'HE Diurna', 'HE Nocturna', 'Extra Dominical', 'Tardanzas (veces)', 'Ausencias No Justificadas', 'Coste Proyectado'];
         const summaryRows = Object.values(stats.userSummaries).map((s: any) => [
             s.name, s.national_id, Math.round(s.minutesWork), Math.round(s.breakfast), Math.round(s.lunch), Math.round(s.activePause), Math.round(s.others),
-            Math.round(s.extraDay), Math.round(s.extraNight), Math.round(s.extraSunday), s.lates, Math.round(s.totalCost)
+            Math.round(s.extraDay), Math.round(s.extraNight), Math.round(s.extraSunday), s.lates, s.unjustifiedAbsences, Math.round(s.totalCost)
         ]);
 
         // 3. Alerts Sheet

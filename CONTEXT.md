@@ -438,6 +438,27 @@ El usuario preguntó si las novedades deberían aparecer en las alertas del dash
 
 ---
 
+## 17. Fase 4: nómina avanzada (2026-08-09) — migración a RPC aplazada deliberadamente
+
+El roadmap original planteaba mover el cálculo de nómina a una función RPC de Postgres. Al revisarlo con el usuario, **se decidió aplazarlo**: la lógica (agrupación de turnos, franjas diurna/nocturna, horario abierto) ya está probada y correcta en `calculations.ts` (verificada con un script de casos concretos en la Fase 2.5), y escribir ~200 líneas de PL/pgSQL sin poder probarlas contra datos reales (sin acceso de escritura a la BD en este entorno) es un riesgo real sobre plata de nómina, sin beneficio inmediato — hoy no hay otro consumidor de estos números fuera del frontend. Queda como deuda técnica anotada para cuando haya un motivo concreto (ej. una app externa que necesite los mismos cálculos).
+
+En su lugar, esta fase resolvió 2 cosas de bajo riesgo y valor real, encontradas al revisar el código:
+
+### 1. Bug corregido: horas multi-sede perdidas en el dashboard
+`AdminDashboard.tsx` (el `useEffect` principal que trae `profiles`) tenía el mismo gap de multi-sede ya corregido en `EmployeeManagement.tsx` y `LeaveManagement.tsx` esta sesión — el fetch era `eq('company_id', companyId)`, solo la sede principal. Las horas trabajadas por un empleado multi-sede en una sede "de visita" no se contaban en NINGÚN dashboard (ni el de la sede donde marcó, ni el de su sede principal). Corregido con el mismo patrón de fusión de dos consultas. Al ser `profiles` el estado compartido por todo el `useMemo` de `stats`, esto arregla automáticamente el conteo de empleados, horas, costo, alertas y las exportaciones ICG/Excel para estos casos.
+
+### 2. Nueva alerta: Ausencia No Justificada + exclusión de novedades aprobadas
+Hoy no existía ninguna detección de "no llegó" — solo `Llegada Tarde` y `Alerta Horas Extras`. Se agregó, dentro del mismo `useMemo` de `stats`: por cada día del rango seleccionado (nunca días futuros) y cada perfil con horario activo ese día (mismo criterio que ya usa la detección de tardanza), si no hay ninguna marcación ese día y no hay una novedad aprobada (`InA_leave_requests`, ya se traía para el panel "Ausencias de Hoy" de la sesión anterior) que cubra la fecha → se cuenta como `unjustifiedAbsences` en el resumen del empleado y, si es hoy, se agrega a las alertas con `severity: 'error'` — mismo patrón que las alertas existentes. `exportToExcel` gana la columna "Ausencias No Justificadas" en la hoja de resumen.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios, app cargando sin errores en pestaña nueva del navegador de pruebas. **Pendiente para el usuario:**
+1. Confirmar que un empleado multi-sede que marcó en una sede secundaria ahora aparece en las horas/costo de esa sede.
+2. Crear una novedad aprobada cubriendo hoy para un empleado con horario activo, y confirmar que NO aparece como ausencia no justificada.
+3. Con otro empleado sin marcación ni novedad hoy, confirmar que SÍ aparece la alerta.
+4. Revisar la columna nueva en el Excel exportado.
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash
