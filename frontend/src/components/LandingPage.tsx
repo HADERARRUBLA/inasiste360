@@ -91,8 +91,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                   animate={{ opacity: [0.3, 0.65, 0.3] }}
                   transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
                 />
-                <div className="absolute inset-2 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 shadow-xl overflow-hidden">
-                  <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-4" />
+                <div className="absolute inset-0 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 shadow-xl overflow-hidden">
+                  <img src="/logo_intelligence.png" alt="Logo" className="w-full h-full object-contain relative z-10 p-1" />
                 </div>
                 {/* Aro fijo */}
                 <div className="absolute inset-0 rounded-full border border-exec-primary/25" />
@@ -102,7 +102,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                   animate={{ rotate: 360 }}
                   transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
                 >
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-exec-primary shadow-[0_0_12px_4px_rgba(177,197,255,0.6)]" />
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-exec-primary shadow-[0_0_14px_5px_rgba(177,197,255,0.6)]" />
                 </motion.div>
               </motion.div>
               <motion.div
