@@ -304,6 +304,40 @@ Implementado en el logo del navbar (`Navbar` en `LandingPage.tsx`): el badge-esc
 ### Ronda 6: escudo → aro con punto orbitando (guiño al "360" de la marca)
 Al usuario le gustó el flotante, pero pidió cambiar el escudo por un aro simple con un punto que le dé la vuelta completa — conectando literalmente con el "360" del nombre de la marca. Implementado: se quitaron los `clipPath` de escudo (glow, badge y contorno SVG); ahora es un badge circular simple (`rounded-full`) con el logo, un aro fijo (`border rounded-full`), y un punto brillante (`w-3 h-3 rounded-full bg-exec-primary` con glow) que orbita 360° alrededor usando la técnica de envolver el punto en un `motion.div` que rota (`animate={{ rotate: 360 }}`, `duration: 4, ease: 'linear'`) con el punto posicionado en el borde superior — el efecto de levitación (float + sombra) de la ronda 5 se mantiene intacto.
 
+### Ronda 7: ajuste final de tamaño del logo dentro del aro
+El usuario pidió, en dos pasos sucesivos, que el logo "360" creciera dentro del aro (badge `w-28 h-28 md:w-36 md:h-36`) hasta acercarse al tamaño del círculo y del punto orbitante. Antes de aplicar `object-cover` (opción obvia para "llenar" el círculo), se verificó el archivo fuente (`file logo_intelligence.png` → 800×1200 px, retrato) — con `object-cover` en un contenedor circular eso recorta impredeciblemente los bordes laterales. Se usó en cambio `object-contain` + `scale-150` (sin padding, `inset-0`), que agranda la imagen de forma controlada sin arriesgar un recorte que cambie según el viewport.
+
+Con esto se cerró la Fase 1 (landing + responsive + modo oscuro + pulido) a satisfacción del usuario. Working branch: todo el trabajo de Fase 1 vive en `develop` (Vercel Preview); `master`/producción solo se actualiza cuando el usuario lo pide explícitamente — regla de flujo de trabajo confirmada esta sesión.
+
+---
+
+## 14. Fase 2 del roadmap de producto: empleados multi-sede (2026-08-09)
+
+Implementa la necesidad real del usuario: varios establecimientos rotan empleados entre sedes, y `InA_profiles.company_id` solo admite una "sede principal" — el Kiosko únicamente reconocía el PIN del empleado en esa sede. Decisión ya confirmada con el usuario: lista fija de sedes autorizadas por empleado, asignada por el admin — el mismo patrón que ya existía y funcionaba para administradores multi-sede (`InA_admin_branches` + checkboxes en `AdminManagement.tsx`), replicado sin reinventar nada.
+
+### Qué se implementó
+- **`supabase/migrations/0003_employee_multi_branch.sql`** (el usuario debe ejecutarlo en el SQL Editor de Supabase — no hay acceso de escritura a la base de datos desde este entorno):
+  - Tabla nueva `InA_employee_branches` (`id`, `employee_id` → `InA_profiles`, `branch_id` → `InA_companies`, `created_at`), índice único `(employee_id, branch_id)`.
+  - RLS: a diferencia de `admin_branches_all` (solo superadmin), aquí también un `admin` normal puede gestionar las sedes de **sus propios** empleados (`EmployeeManagement.tsx` lo usan ambos roles) — política vía `exists (... is_admin_of_org(p.organization_id))` uniendo a `InA_profiles`.
+  - `kiosk_verify_pin` ampliada: el `WHERE` ahora acepta `p.company_id = p_company_id OR exists (... InA_employee_branches ...)`.
+  - **Hallazgo propio durante la implementación (no estaba en el plan original):** `kiosk_register_entry` también validaba `company_id = p_company_id` de forma estricta — sin ampliar esa función también, un empleado que pasara `kiosk_verify_pin` en una sede secundaria habría fallado al intentar registrar la marcación (`KioskMode.tsx` llama a ambas RPCs con el mismo `p_company_id`, el de la sede física del kiosko). Se amplió con la misma condición `OR exists (...)` para que el flujo completo funcione, no solo la verificación de PIN.
+- **`frontend/src/components/EmployeeManagement.tsx`**: replicado el patrón de `AdminManagement.tsx`:
+  - `formData.managed_branches: string[]` + estado `companies: Company[]` (cargadas por organización en `fetchInitialData`).
+  - `fetchProfiles` hace join `assigned_branches:InA_employee_branches(branch_id)`.
+  - `handleEdit` puebla `managed_branches` desde ese join.
+  - `handleSave`: separa `managed_branches` del payload de `InA_profiles`, guarda el perfil (usando `.select().single()` en el insert para obtener el id nuevo), y hace `delete().eq('employee_id', ...)` + `insert(...)` en `InA_employee_branches` — mismo patrón delete-then-insert que `AdminManagement`.
+  - Nueva sección "Sedes Autorizadas" (checkboxes de todas las sedes de la organización, con etiqueta "(Principal)" junto a la sede actual del empleado) ubicada entre la ficha de nómina y la definición de jornada laboral.
+  - Badge "+N sedes" en la tabla de colaboradores cuando tienen sedes adicionales asignadas.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. **Pendiente para el usuario:**
+1. Ejecutar `0003_employee_multi_branch.sql` en el SQL Editor de Supabase (DEV) y confirmar la query de verificación al final (política `employee_branches_all` visible en `pg_policies`).
+2. Probar en el navegador: editar un empleado, marcar 2+ sedes adicionales, guardar, reabrir el formulario y confirmar que los checkboxes quedan marcados.
+3. Probar el Kiosko marcando con el PIN de un empleado en una sede secundaria (no su sede principal) y confirmar que tanto la verificación de PIN como el registro de la marcación funcionan.
+4. Confirmar que un empleado SIN esa sede en `InA_employee_branches` sigue sin poder marcar ahí.
+
+No se pudo completar esta verificación en el navegador de prueba de esta sesión porque requiere iniciar sesión como admin/superadmin (credenciales de Supabase Auth no disponibles en este entorno, correctamente no guardadas en ningún archivo del proyecto).
+
 ---
 
 ## 10. Cómo correr el proyecto localmente

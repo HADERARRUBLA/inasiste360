@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Profile } from '../types';
-import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDown, Search } from 'lucide-react';
+import type { Profile, Company } from '../types';
+import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDown, Search, MapPin } from 'lucide-react';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 import * as XLSX from 'xlsx';
@@ -33,6 +33,7 @@ const dayNames: { [key: string]: string } = {
 
 export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyId }) => {
     const [profiles, setProfiles] = useState<Profile[]>([]);
+    const [companies, setCompanies] = useState<Company[]>([]);
     const [loading, setLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,7 +63,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         face_vector: null as number[] | null,
         profile_photo: null as string | null,
         company_id: '',
-        organization_id: null as string | null
+        organization_id: null as string | null,
+        managed_branches: [] as string[]
     });
 
     useEffect(() => {
@@ -92,12 +94,22 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             .select('organization_id')
             .eq('id', companyId)
             .single();
-            
-        setFormData(prev => ({ 
-            ...prev, 
+
+        setFormData(prev => ({
+            ...prev,
             company_id: companyId,
             organization_id: comp?.organization_id || null
         }));
+
+        if (comp?.organization_id) {
+            const { data: companyList } = await supabase
+                .from('InA_companies')
+                .select('*')
+                .eq('organization_id', comp.organization_id)
+                .order('name');
+            setCompanies(companyList || []);
+        }
+
         await fetchProfiles(companyId);
     };
 
@@ -111,7 +123,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         try {
             const { data, error } = await supabase
                 .from('InA_profiles')
-                .select('*')
+                .select('*, assigned_branches:InA_employee_branches(branch_id)')
                 .eq('company_id', targetId as string)
                 .order('full_name');
             if (error) throw error;
@@ -149,7 +161,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             face_vector: profile.face_vector || null,
             profile_photo: profile.profile_photo || null,
             company_id: profile.company_id || '',
-            organization_id: profile.organization_id || null
+            organization_id: profile.organization_id || null,
+            managed_branches: (profile as any).assigned_branches?.map((b: any) => b.branch_id) || []
         });
         setEditingId(profile.id);
         setFaceCaptures([]);
@@ -201,8 +214,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
         let error;
         // Clean data - ensure we don't send any derived or nested objects if they accidentally got in
-        const payload = { ...formData };
-        
+        const { managed_branches, ...payload } = formData;
+        let savedProfileId: string | null = editingId;
 
         if (editingId) {
             const { error: err } = await supabase
@@ -211,11 +224,32 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 .eq('id', editingId);
             error = err;
         } else {
-            const { error: err } = await supabase.from('InA_profiles').insert([payload]);
+            const { data: inserted, error: err } = await supabase
+                .from('InA_profiles')
+                .insert([payload])
+                .select()
+                .single();
             error = err;
+            savedProfileId = inserted?.id || null;
         }
 
         if (!error) {
+            if (savedProfileId) {
+                await supabase.from('InA_employee_branches').delete().eq('employee_id', savedProfileId);
+                if (managed_branches.length > 0) {
+                    const branchAssignments = managed_branches.map(branchId => ({
+                        employee_id: savedProfileId,
+                        branch_id: branchId
+                    }));
+                    const { error: branchError } = await supabase
+                        .from('InA_employee_branches')
+                        .insert(branchAssignments);
+                    if (branchError) {
+                        showToast('Colaborador guardado, pero hubo un error asignando sedes: ' + branchError.message, 'error');
+                    }
+                }
+            }
+
             setIsAdding(false);
             setEditingId(null);
             setFaceCaptures([]);
@@ -236,7 +270,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 work_end_time: '17:00',
                 work_schedule: { ...DEFAULT_SCHEDULE },
                 face_vector: null,
-                profile_photo: null
+                profile_photo: null,
+                managed_branches: []
             }));
             fetchProfiles();
         } else {
@@ -493,6 +528,38 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                             </div>
                         </div>
 
+                        {/* Sedes Autorizadas (multi-sede) */}
+                        <div className="md:col-span-2 p-8 bg-muted/10 border-2 border-primary/5 rounded-[2rem] space-y-4">
+                            <h4 className="text-sm font-black uppercase tracking-widest text-foreground flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-primary" /> Sedes Autorizadas
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter">Además de su sede principal, marca otras sedes donde este colaborador puede marcar (rotación entre sucursales).</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 border-2 border-muted rounded-2xl max-h-40 overflow-y-auto bg-white">
+                                {companies.map((company: Company) => (
+                                    <label key={company.id} className="flex items-center gap-3 p-2 hover:bg-muted/20 rounded-xl cursor-pointer transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.managed_branches.includes(company.id)}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                                const branches = e.target.checked
+                                                    ? [...formData.managed_branches, company.id]
+                                                    : formData.managed_branches.filter(id => id !== company.id);
+                                                setFormData({ ...formData, managed_branches: branches });
+                                            }}
+                                            className="w-4 h-4 rounded text-primary focus:ring-primary"
+                                        />
+                                        <span className="text-sm font-bold">{company.name}</span>
+                                        {company.id === formData.company_id && (
+                                            <span className="text-[9px] font-black uppercase text-primary/60">(Principal)</span>
+                                        )}
+                                    </label>
+                                ))}
+                                {companies.length === 0 && (
+                                    <p className="text-[10px] text-muted-foreground font-bold uppercase p-2">No hay otras sedes en esta organización</p>
+                                )}
+                            </div>
+                        </div>
+
                         {/* Gestión de Jornada */}
                         <div className="md:col-span-2 p-8 bg-muted/10 border-2 border-primary/5 rounded-[2rem] space-y-6">
                             <div className="flex items-center justify-between">
@@ -686,7 +753,14 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                         )}
                                         <div>
                                             <p className="font-black text-foreground text-base tracking-tight leading-tight">{profile.full_name}</p>
-                                            <p className="text-xs text-muted-foreground font-bold">{profile.phone_number || 'Sin teléfono'}</p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-xs text-muted-foreground font-bold">{profile.phone_number || 'Sin teléfono'}</p>
+                                                {(profile as any).assigned_branches?.length > 0 && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase">
+                                                        <MapPin className="w-2.5 h-2.5" /> +{(profile as any).assigned_branches.length} sedes
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </td>
