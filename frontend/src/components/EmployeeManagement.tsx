@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Profile, Company } from '../types';
+import type { Profile, Company, ScheduleMode } from '../types';
 import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDown, Search, MapPin } from 'lucide-react';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
@@ -56,7 +56,9 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         hourly_rate_sunday_holiday: 0,
         hourly_rate_sunday_holiday_extra_day: 0,
         hourly_rate_sunday_holiday_extra_night: 0,
-        use_custom_schedule: false,
+        schedule_mode: 'branch' as ScheduleMode,
+        open_no_overtime: false,
+        open_max_ordinary_minutes: 480,
         work_start_time: '08:00',
         work_end_time: '17:00',
         work_schedule: { ...DEFAULT_SCHEDULE } as any,
@@ -121,13 +123,28 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         }
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            // Empleados con esta sede como principal
+            const { data: primary, error } = await supabase
                 .from('InA_profiles')
                 .select('*, assigned_branches:InA_employee_branches(branch_id)')
                 .eq('company_id', targetId as string)
                 .order('full_name');
             if (error) throw error;
-            setProfiles(data || []);
+
+            // + empleados autorizados aquí como sede adicional (sede principal distinta)
+            const { data: visiting, error: visitingError } = await supabase
+                .from('InA_profiles')
+                .select('*, assigned_branches:InA_employee_branches!inner(branch_id)')
+                .eq('assigned_branches.branch_id', targetId as string);
+            if (visitingError) throw visitingError;
+
+            const combined = [...(primary || [])];
+            (visiting || []).forEach((v: any) => {
+                if (!combined.find(p => p.id === v.id)) combined.push(v);
+            });
+            combined.sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+            setProfiles(combined);
         } catch (err: any) {
             console.error('Error fetching profiles:', err);
             showToast('Error cargando empleados: ' + err.message, 'error');
@@ -154,7 +171,9 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
             hourly_rate_sunday_holiday: profile.hourly_rate_sunday_holiday || 0,
             hourly_rate_sunday_holiday_extra_day: profile.hourly_rate_sunday_holiday_extra_day || 0,
             hourly_rate_sunday_holiday_extra_night: profile.hourly_rate_sunday_holiday_extra_night || 0,
-            use_custom_schedule: profile.use_custom_schedule || false,
+            schedule_mode: profile.schedule_mode || 'branch',
+            open_no_overtime: profile.open_no_overtime || false,
+            open_max_ordinary_minutes: profile.open_max_ordinary_minutes || 480,
             work_start_time: profile.work_start_time || '08:00',
             work_end_time: profile.work_end_time || '17:00',
             work_schedule: { ...DEFAULT_SCHEDULE, ...(profile.work_schedule || {}) },
@@ -265,7 +284,9 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 hourly_rate_sunday_holiday: 0,
                 hourly_rate_sunday_holiday_extra_day: 0,
                 hourly_rate_sunday_holiday_extra_night: 0,
-                use_custom_schedule: false,
+                schedule_mode: 'branch',
+                open_no_overtime: false,
+                open_max_ordinary_minutes: 480,
                 work_start_time: '08:00',
                 work_end_time: '17:00',
                 work_schedule: { ...DEFAULT_SCHEDULE },
@@ -562,23 +583,58 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
 
                         {/* Gestión de Jornada */}
                         <div className="md:col-span-2 p-8 bg-muted/10 border-2 border-primary/5 rounded-[2rem] space-y-6">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <h4 className="text-sm font-black uppercase tracking-widest text-foreground flex items-center gap-2">
                                     <CheckCircle2 className="w-4 h-4 text-primary" /> Definición de Jornada Laboral
                                 </h4>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="customSchedule"
-                                        className="w-4 h-4 accent-primary"
-                                        checked={formData.use_custom_schedule}
-                                        onChange={e => setFormData({ ...formData, use_custom_schedule: e.target.checked })}
-                                    />
-                                    <label htmlFor="customSchedule" className="text-[10px] font-black uppercase text-muted-foreground cursor-pointer">Usar Horario Personalizado</label>
+                                <div className="flex items-center gap-2 border-b pb-2 sm:pb-0 sm:border-b-0">
+                                    {([
+                                        ['branch', 'Horario de Sede'],
+                                        ['custom', 'Horario Personalizado'],
+                                        ['open', 'Horario Abierto']
+                                    ] as [ScheduleMode, string][]).map(([mode, label]) => (
+                                        <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, schedule_mode: mode })}
+                                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formData.schedule_mode === mode ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 
-                            {formData.use_custom_schedule ? (
+                            {formData.schedule_mode === 'open' ? (
+                                <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+                                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter">Para roles sin turno fijo (administradores, domiciliarios). Las horas se siguen clasificando en diurna/nocturna a partir de la primera marcación del día.</p>
+                                    <label className="flex items-center gap-3 p-4 border-2 border-dashed rounded-2xl cursor-pointer bg-white">
+                                        <input
+                                            type="checkbox"
+                                            className="w-4 h-4 accent-primary"
+                                            checked={formData.open_no_overtime}
+                                            onChange={e => setFormData({ ...formData, open_no_overtime: e.target.checked })}
+                                        />
+                                        <span className="text-xs font-black uppercase tracking-widest">Cargo de confianza y dirección (sin horas extra)</span>
+                                    </label>
+
+                                    {!formData.open_no_overtime && (
+                                        <div className="space-y-2 max-w-xs">
+                                            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest pl-1">Minutos ordinarios antes de generar hora extra</label>
+                                            <input
+                                                type="number"
+                                                min={60}
+                                                max={1440}
+                                                step={30}
+                                                value={formData.open_max_ordinary_minutes}
+                                                onChange={e => setFormData({ ...formData, open_max_ordinary_minutes: parseInt(e.target.value) || 480 })}
+                                                className="w-full px-5 py-3 border rounded-xl bg-background outline-none focus:border-primary font-bold"
+                                            />
+                                            <p className="text-[9px] text-muted-foreground font-bold uppercase">≈ {(formData.open_max_ordinary_minutes / 60).toFixed(1)} horas desde la primera marcación del día</p>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : formData.schedule_mode === 'custom' ? (
                                 <div className="space-y-3 animate-in fade-in zoom-in duration-300">
                                     <div className="grid grid-cols-12 gap-4 px-4 py-2 text-[8px] font-black uppercase text-muted-foreground tracking-widest border-b border-primary/5">
                                         <div className="col-span-3">Día</div>
@@ -753,11 +809,16 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                         )}
                                         <div>
                                             <p className="font-black text-foreground text-base tracking-tight leading-tight">{profile.full_name}</p>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                                 <p className="text-xs text-muted-foreground font-bold">{profile.phone_number || 'Sin teléfono'}</p>
                                                 {(profile as any).assigned_branches?.length > 0 && (
                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-md text-[9px] font-black uppercase">
                                                         <MapPin className="w-2.5 h-2.5" /> +{(profile as any).assigned_branches.length} sedes
+                                                    </span>
+                                                )}
+                                                {profile.company_id !== companyId && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-md text-[9px] font-black uppercase" title="Este colaborador está autorizado aquí, pero su sede principal es otra">
+                                                        De visita · Principal: {companies.find(c => c.id === profile.company_id)?.name || '???'}
                                                     </span>
                                                 )}
                                             </div>

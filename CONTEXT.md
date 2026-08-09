@@ -338,6 +338,33 @@ Implementa la necesidad real del usuario: varios establecimientos rotan empleado
 
 No se pudo completar esta verificación en el navegador de prueba de esta sesión porque requiere iniciar sesión como admin/superadmin (credenciales de Supabase Auth no disponibles en este entorno, correctamente no guardadas en ningún archivo del proyecto).
 
+**Actualización — verificado en vivo por el usuario (2026-08-09):** migración `0003` ejecutada en Supabase DEV, checkboxes de "Sedes Autorizadas" probados con éxito. Durante la prueba se encontró un gap real: `EmployeeManagement.tsx` solo listaba empleados con `company_id = sede activa`, así que un empleado autorizado en una sede adicional no aparecía al ver esa sede — **corregido** en `fetchProfiles`: ahora combina dos consultas (sede principal + `InA_employee_branches!inner` filtrado por `branch_id`), deduplicadas, con un badge ámbar "De visita · Principal: [sede]" cuando el empleado aparece por estar autorizado, no por ser su sede principal.
+
+También se encontró, en paralelo, que la geolocalización por IP/red del navegador de prueba (sin GPS real, sobre internet satelital) resuelve a coordenadas erróneas (Dhaka, Bangladesh) — confirmado por el usuario comparando contra Google Maps en el mismo navegador. No es un bug de la app; se agregó una advertencia de baja precisión (`BranchManagement.tsx`/`CompanySetup.tsx`, umbral >150m) y un mensaje de diagnóstico en `KioskMode.tsx` cuando la distancia reportada es absurdamente grande (>5km), sugiriendo revisar GPS/permisos del dispositivo en vez de asumir que el sistema falla.
+
+---
+
+## 15. Fase 2.5: Horario Abierto + corrección de turnos que cruzan medianoche (2026-08-09)
+
+Mientras se probaba la Fase 2 en vivo, el usuario pidió un tercer modo de jornada para roles sin turno fijo (administradores, domiciliarios) cuyas horas igual deben clasificarse en nómina. Decisiones de negocio confirmadas: sí debe existir el concepto de "hora extra" (activado por un tope configurable, no eliminado), y administradores/domiciliarios pueden comportarse distinto — resuelto **por empleado**, no por rol automático (la BD no distingue "domiciliario" como rol formal).
+
+### Qué se implementó
+- **`supabase/migrations/0004_open_schedule.sql`** (el usuario debe ejecutarla): `InA_profiles` gana `schedule_mode` (`'branch'|'custom'|'open'`, reemplaza a `use_custom_schedule`, con backfill), `open_no_overtime` (checkbox "cargo de confianza y dirección, sin horas extra") y `open_max_ordinary_minutes` (tope configurable, default 480 = 8h).
+- **`frontend/src/utils/calculations.ts`**: reescrito por completo — tenía un stub (`calculateShift`) sin usar en ningún lado, con un comentario que literalmente pedía esta refactorización. Ahora expone:
+  - `groupEntriesIntoShifts()`: agrupa marcaciones por **turno** (delimitado por un `event_type='in'` sin `is_return`), no por la columna `date` de cada evento individual. **Corrige un bug preexistente real y confirmado**: un turno que cruza medianoche (in 23:50 / out 00:10) se contaba como 0 minutos porque sus dos eventos caían en grupos de "día" distintos — afecta a cualquier empleado con turno nocturno, en cualquier modo de horario, no solo el nuevo. El usuario confirmó explícitamente incluir este fix en el mismo cambio.
+  - `classifyShiftMinutes()`: reemplaza la lógica de `getOverlap`/`schedThreshold`/`nightThreshold` que estaba **duplicada** en dos lugares de `AdminDashboard.tsx` (el `useMemo` del dashboard y `exportToICG`). Preserva el comportamiento exacto para `'branch'`/`'custom'`; agrega `'open'`: si `openNoOvertime`, todo el turno es diurna/nocturna sin extra; si no, el pivote ordinario/extra es dinámico (`primera marcación del día + openMaxOrdinaryMinutes`), no un reloj fijo. Incluye una salvaguarda para no perder minutos en turnos muy largos (>24h desde el inicio de la franja nocturna).
+- **`frontend/src/components/AdminDashboard.tsx`**: ambos cálculos duplicados ahora usan las funciones compartidas; la detección de "llegada tarde" ignora perfiles en modo `'open'` (no aplica sin horario fijo); el badge de horario de la tabla distingue los 3 modos.
+- **`frontend/src/components/EmployeeManagement.tsx`**: el checkbox binario "Usar Horario Personalizado" se reemplazó por un selector de 3 modos (Sede/Personalizado/Abierto, mismo patrón visual de pestañas que ya usa `AdminDashboard.tsx`). En modo "Abierto": checkbox "Cargo de confianza y dirección" + input numérico condicional de minutos ordinarios.
+
+### Nota de diseño importante
+El domingo se mantiene **inconsistente entre los dos consumidores**, tal como ya estaba antes de este cambio (gap preexistente, fuera de alcance): el `useMemo` del dashboard sigue calculando el split diurna/nocturna internamente para el costo pero muestra el 100% del día bajo "extraSunday" en el resumen; `exportToICG` corta directo a "Recargo Dominical" sin dividir. `classifyShiftMinutes()` deliberadamente no conoce el concepto de domingo — cada llamador decide, igual que antes.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. Verificado en el navegador que la app carga sin errores de consola tras el cambio (no se pudo probar el flujo autenticado completo por falta de credenciales en este entorno, igual que en la Fase 2). **Pendiente para el usuario:**
+1. Ejecutar `0004_open_schedule.sql` en Supabase DEV, confirmar con el `select ... group by schedule_mode` que no quedan perfiles sin clasificar.
+2. Configurar un empleado en modo "Horario Abierto" (con y sin "cargo de confianza") y confirmar que el dashboard y la exportación ICG clasifican sus horas coherentemente.
+3. Confirmar que un turno que cruza medianoche (cualquier modo de horario) ya no se cuenta como 0 minutos.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente

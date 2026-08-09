@@ -1,5 +1,6 @@
 export type EventType = 'in' | 'out' | 'breakfast' | 'lunch' | 'active_pause' | 'other';
 export type UserRole = 'superadmin' | 'admin' | 'employee';
+export type ScheduleMode = 'branch' | 'custom' | 'open';
 
 export interface DaySchedule {
     start: string;
@@ -49,7 +50,9 @@ export interface Profile {
     hourly_rate_sunday_holiday?: number;
     hourly_rate_sunday_holiday_extra_day?: number;
     hourly_rate_sunday_holiday_extra_night?: number;
-    use_custom_schedule?: boolean;
+    schedule_mode: ScheduleMode;
+    open_no_overtime?: boolean;
+    open_max_ordinary_minutes?: number;
     work_start_time?: string;
     work_end_time?: string;
     work_schedule?: WeeklySchedule;

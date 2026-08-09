@@ -12,6 +12,7 @@ import {
     Tooltip, ResponsiveContainer
 } from 'recharts';
 import { showToast } from '../lib/toastStore';
+import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes } from '../utils/calculations';
 
 interface AdminDashboardProps {
     companyId: string | null;
@@ -138,48 +139,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             };
         });
 
-        // Group all entries by user and date for period analysis
-        const perUserAndDateAll = entries.reduce((acc: any, curr) => {
-            const date = curr.date || curr.created_at?.split('T')[0];
-            if (!date || date < dateRange.start || date > dateRange.end) return acc;
-            const key = `${curr.profile_id}_${date}`;
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(curr);
-            return acc;
-        }, {});
+        // Agrupar marcaciones por turno (no por la columna `date` de cada
+        // evento suelto) para no perder turnos que cruzan medianoche, y
+        // filtrar por el rango de fechas usando el ancla del turno.
+        const shiftGroups = groupEntriesIntoShifts(entries)
+            .filter(g => g.dateKey >= dateRange.start && g.dateKey <= dateRange.end);
 
-        Object.keys(perUserAndDateAll).forEach(key => {
-            const [profileId, dateStr] = key.split('_');
-            const dayEntries = perUserAndDateAll[key];
+        shiftGroups.forEach(group => {
+            const { profileId, dateKey: dateStr, entries: dayEntries } = group;
             const profile = profiles.find(p => p.id === profileId);
-            if (!profile) return;
+            if (!profile || profile.schedule_mode === 'open') return; // sin horario fijo, no aplica "llegada tarde"
 
             const dateObj = new Date(dateStr + 'T12:00:00');
             const dayCode = dayMap[dateObj.getDay()];
-            const profileSched = profile.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+            const profileSched = profile.schedule_mode === 'custom' ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
 
             if (profileSched?.active) {
-                // Find first IN (not return) of that day
-                const firstIn = dayEntries
-                    .filter((e: any) => e.event_type === 'in' && !e.metadata?.is_return)
-                    .sort((a: any, b: any) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime())[0];
+                const firstIn = getFirstInTime(dayEntries);
 
                 if (firstIn) {
-                    const inTime = new Date(firstIn.clock_in || firstIn.created_at!);
                     const [schedH, schedM] = profileSched.start.split(':').map(Number);
-                    const schedTime = new Date(inTime);
+                    const schedTime = new Date(firstIn);
                     schedTime.setHours(schedH, schedM, 0, 0);
 
-                    if (inTime > schedTime) {
+                    if (firstIn > schedTime) {
                         totalLatesPeriod++;
                         userSummaries[profileId].lates++;
-                        const diffMin = Math.round((inTime.getTime() - schedTime.getTime()) / 60000);
+                        const diffMin = Math.round((firstIn.getTime() - schedTime.getTime()) / 60000);
                         if (dateStr === todayStr) {
                             alertEntries.push({
                                 name: profile.full_name,
                                 type: 'Llegada Tarde',
                                 desc: `${diffMin} min tarde (${dateStr})`,
-                                time: inTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                time: firstIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                                 severity: 'error'
                             });
                         }
@@ -193,21 +185,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         let totalMinutesWork = 0;
         const globalBreakdown: Record<string, number> = { trabajo: 0, breakfast: 0, lunch: 0, active_pause: 0 };
 
-        Object.values(perUserAndDateAll).forEach((dayEntries: any) => {
-            const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-            const profileId = dayEntries[0].profile_id;
+        shiftGroups.forEach(group => {
+            const { profileId, dateKey: dateStr, entries: sorted } = group;
             const profile = profiles.find(p => p.id === profileId);
             if (!profile) return;
 
-            const dateStr = dayEntries[0].date || dayEntries[0].created_at?.split('T')[0];
             const dateObj = new Date(dateStr + 'T12:00:00');
             const dayCode = dayMap[dateObj.getDay()];
-            const profileSched = profile.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+            const scheduleMode = profile.schedule_mode || 'branch';
+            const profileSched = scheduleMode === 'custom' ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+            const isSunday = dateObj.getDay() === 0;
+            const firstInTime = scheduleMode === 'open' ? getFirstInTime(sorted) : null;
 
             for (let i = 0; i < sorted.length; i++) {
                 const entry = sorted[i];
                 const start = new Date(entry.clock_in || entry.created_at!);
-                let end = start; 
+                let end = start;
                 let diffMin = 0;
 
                 if (entry.total_hours) {
@@ -216,8 +209,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 } else {
                     const next = sorted[i + 1];
                     const isEntryToday = (entry.date || entry.created_at?.split('T')[0]) === todayStr;
-                    end = entry.clock_out 
-                        ? new Date(entry.clock_out) 
+                    end = entry.clock_out
+                        ? new Date(entry.clock_out)
                         : (next ? new Date(next.clock_in || next.created_at!) : (isEntryToday ? new Date() : start));
                     diffMin = Math.max(0, (end.getTime() - start.getTime()) / 60000);
                 }
@@ -238,28 +231,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 totalMinutesWork += diffMin;
 
                 // --- Calculate Smart Cost & Extras ---
-                const isSunday = dateObj.getDay() === 0;
-                const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
-                const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
-
-                const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
-                const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
-
-                const getOverlap = (t1: Date, t2: Date) => {
-                    const overlapStart = new Date(Math.max(start.getTime(), t1.getTime()));
-                    const overlapEnd = new Date(Math.min(end.getTime(), t2.getTime()));
-                    return Math.max(0, (overlapEnd.getTime() - overlapStart.getTime()) / 60000);
-                };
-
-                const baseMin = getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
-                const extraDayMin = getOverlap(schedThreshold, nightThreshold);
-                const extraNightMin = getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
+                const buckets = classifyShiftMinutes(start, end, {
+                    nightShiftStartTime: company?.night_shift_start_time || '21:00',
+                    daySchedule: profileSched,
+                    scheduleMode,
+                    openNoOvertime: profile.open_no_overtime,
+                    openMaxOrdinaryMinutes: profile.open_max_ordinary_minutes,
+                    firstInTime
+                });
 
                 const baseRate = isSunday ? (profile.hourly_rate_sunday_holiday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
-                
-                const cost = (baseMin * baseRate / 60) + 
-                             (extraDayMin * (profile.hourly_rate_extra_day || baseRate || 0) / 60) + 
-                             (extraNightMin * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
+
+                const cost = (buckets.ordinary * baseRate / 60) +
+                             (buckets.extraDay * (profile.hourly_rate_extra_day || baseRate || 0) / 60) +
+                             (buckets.extraNight * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
 
                 estimatedCost += cost;
                 userSummaries[profileId].totalCost += cost;
@@ -267,8 +252,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 if (isSunday) {
                     userSummaries[profileId].extraSunday += diffMin;
                 } else {
-                    userSummaries[profileId].extraDay += extraDayMin;
-                    userSummaries[profileId].extraNight += extraNightMin;
+                    userSummaries[profileId].extraDay += buckets.extraDay;
+                    userSummaries[profileId].extraNight += buckets.extraNight;
                 }
             }
         });
@@ -334,68 +319,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
     const exportToICG = () => {
         const rows: any[] = [['CodEmpleado', 'Fecha', 'Concepto', 'Unidades', 'Descripcion']];
-        
-        const totalsByEmployee = filteredEntries.reduce((acc: any, curr) => {
-            if (!curr.profile_id) return acc;
-            const date = curr.date || curr.created_at?.split('T')[0];
-            if (!date) return acc;
 
-            const profile = profiles.find(p => p.id === curr.profile_id);
-            if (!acc[curr.profile_id]) {
-                acc[curr.profile_id] = {
-                    name: profile?.full_name || 'N/A',
-                    national_id: profile?.national_id || 'N/A',
-                    days: {}
-                };
-            }
-            if (!acc[curr.profile_id].days[date]) acc[curr.profile_id].days[date] = [];
-            acc[curr.profile_id].days[date].push(curr);
-            return acc;
-        }, {});
+        // Misma agrupación por turno (no por fecha de cada evento suelto)
+        // que el useMemo principal, para no perder turnos que cruzan medianoche.
+        const shiftGroupsForExport = groupEntriesIntoShifts(entries)
+            .filter(g => g.dateKey >= dateRange.start && g.dateKey <= dateRange.end);
 
-        Object.values(totalsByEmployee).forEach((emp: any) => {
-            Object.keys(emp.days).forEach(dateStr => {
-                let dOrd = 0, dExtD = 0, dExtN = 0, dDom = 0;
-                const dayEntries = emp.days[dateStr];
-                const sorted = [...dayEntries].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-                const profile = profiles.find(p => p.national_id === emp.national_id);
-                const dateObj = new Date(dateStr + 'T12:00:00');
-                const dayCode = dayMap[dateObj.getDay()];
-                const profileSched = profile?.use_custom_schedule ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
-                const isSunday = dateObj.getDay() === 0;
+        shiftGroupsForExport.forEach(group => {
+            let dOrd = 0, dExtD = 0, dExtN = 0, dDom = 0;
+            const { profileId, dateKey: dateStr, entries: sorted } = group;
+            const profile = profiles.find(p => p.id === profileId);
+            if (!profile) return;
 
-                sorted.forEach((e: any, idx: number) => {
-                    if (e.event_type !== 'in') return;
-                    const start = new Date(e.created_at!);
-                    const next = sorted[idx + 1];
-                    const end = next ? new Date(next.created_at!) : (dateStr === new Date().toLocaleDateString('en-CA') ? new Date() : start);
-                    const diff = (end.getTime() - start.getTime()) / 60000;
+            const dateObj = new Date(dateStr + 'T12:00:00');
+            const dayCode = dayMap[dateObj.getDay()];
+            const scheduleMode = profile.schedule_mode || 'branch';
+            const profileSched = scheduleMode === 'custom' ? (profile.work_schedule?.[dayCode]) : (company?.work_schedule?.[dayCode]);
+            const isSunday = dateObj.getDay() === 0;
+            const firstInTime = scheduleMode === 'open' ? getFirstInTime(sorted) : null;
 
-                    const [nShiftH, nShiftM] = (company?.night_shift_start_time || '21:00').split(':').map(Number);
-                    const [sEndH, sEndM] = (profileSched?.end || '17:00').split(':').map(Number);
-                    const nightThreshold = new Date(start); nightThreshold.setHours(nShiftH, nShiftM, 0, 0);
-                    const schedThreshold = new Date(start); schedThreshold.setHours(sEndH, sEndM, 0, 0);
+            sorted.forEach((e: any, idx: number) => {
+                if (e.event_type !== 'in') return;
+                const start = new Date(e.clock_in || e.created_at!);
+                const next = sorted[idx + 1];
+                const end = next ? new Date(next.clock_in || next.created_at!) : (dateStr === new Date().toLocaleDateString('en-CA') ? new Date() : start);
+                const diff = (end.getTime() - start.getTime()) / 60000;
 
-                    const getOverlap = (t1: Date, t2: Date) => {
-                        const os = new Date(Math.max(start.getTime(), t1.getTime()));
-                        const oe = new Date(Math.min(end.getTime(), t2.getTime()));
-                        return Math.max(0, (oe.getTime() - os.getTime()) / 60000);
-                    };
-
-                    if (isSunday) {
-                        dDom += diff;
-                    } else {
-                        dOrd += getOverlap(new Date(start.getTime() - 86400000), schedThreshold);
-                        dExtD += getOverlap(schedThreshold, nightThreshold);
-                        dExtN += getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
-                    }
-                });
-
-                if (dOrd > 0) rows.push([emp.national_id, dateStr, '1', (dOrd / 60).toFixed(2), 'HE Ordinarias']);
-                if (dExtD > 0) rows.push([emp.national_id, dateStr, '2', (dExtD / 60).toFixed(2), 'HE Diurnas']);
-                if (dExtN > 0) rows.push([emp.national_id, dateStr, '3', (dExtN / 60).toFixed(2), 'HE Nocturnas']);
-                if (dDom > 0) rows.push([emp.national_id, dateStr, '4', (dDom / 60).toFixed(2), 'Recargo Dominical']);
+                if (isSunday) {
+                    dDom += diff;
+                } else {
+                    const buckets = classifyShiftMinutes(start, end, {
+                        nightShiftStartTime: company?.night_shift_start_time || '21:00',
+                        daySchedule: profileSched,
+                        scheduleMode,
+                        openNoOvertime: profile.open_no_overtime,
+                        openMaxOrdinaryMinutes: profile.open_max_ordinary_minutes,
+                        firstInTime
+                    });
+                    dOrd += buckets.ordinary;
+                    dExtD += buckets.extraDay;
+                    dExtN += buckets.extraNight;
+                }
             });
+
+            if (dOrd > 0) rows.push([profile.national_id, dateStr, '1', (dOrd / 60).toFixed(2), 'HE Ordinarias']);
+            if (dExtD > 0) rows.push([profile.national_id, dateStr, '2', (dExtD / 60).toFixed(2), 'HE Diurnas']);
+            if (dExtN > 0) rows.push([profile.national_id, dateStr, '3', (dExtN / 60).toFixed(2), 'HE Nocturnas']);
+            if (dDom > 0) rows.push([profile.national_id, dateStr, '4', (dDom / 60).toFixed(2), 'Recargo Dominical']);
         });
 
         const csvContent = rows.map(r => r.map((cell: any) => `"${cell}"`).join(',')).join('\n');
@@ -737,7 +707,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                                             <td className="px-8 py-5">${p.hourly_rate_extra_day?.toLocaleString()}</td>
                                             <td className="px-8 py-5">${p.hourly_rate_extra_night?.toLocaleString()}</td>
                                             <td className="px-8 py-5 text-orange-600">${p.hourly_rate_sunday_holiday?.toLocaleString()}</td>
-                                            <td className="px-8 py-5 text-[9px] text-muted-foreground">{p.use_custom_schedule ? 'PERSONALIZADO' : 'GLOBAL SEDE'}</td>
+                                            <td className="px-8 py-5 text-[9px] text-muted-foreground">{p.schedule_mode === 'custom' ? 'PERSONALIZADO' : p.schedule_mode === 'open' ? 'ABIERTO' : 'GLOBAL SEDE'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
