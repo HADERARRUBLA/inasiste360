@@ -131,3 +131,28 @@ export interface LeaveRequestAudit {
     new_data: Record<string, any> | null;
     InA_profiles?: Profile;
 }
+
+export interface EmployeeHrProfile {
+    profile_id: string;
+    hire_date?: string | null;
+    marital_status?: string | null;
+    children_count?: number | null;
+    education_level?: string | null;
+    eps?: string | null;
+    arl?: string | null;
+    compensation_fund?: string | null;
+    pension_fund?: string | null;
+    updated_at?: string;
+}
+
+export type DocType = 'hoja_de_vida' | 'otro';
+
+export interface EmployeeDocument {
+    id: string;
+    profile_id: string;
+    doc_type: DocType;
+    file_name: string;
+    storage_path: string;
+    uploaded_by?: string | null;
+    uploaded_at?: string;
+}

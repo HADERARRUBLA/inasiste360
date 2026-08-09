@@ -518,7 +518,7 @@ function App() {
             ) : activeTab === 'reports' ? (
               <AdminDashboard companyId={selectedCompanyId} view="reports" />
             ) : activeTab === 'employees' ? (
-              <EmployeeManagement companyId={selectedCompanyId} />
+              <EmployeeManagement companyId={selectedCompanyId} currentProfileId={userProfile?.id || null} />
             ) : activeTab === 'leaves' ? (
               <LeaveManagement companyId={selectedCompanyId} currentProfileId={userProfile?.id || null} onPendingCountChange={setPendingLeaveCount} />
             ) : activeTab === 'audit' ? (

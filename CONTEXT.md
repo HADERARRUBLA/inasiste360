@@ -459,6 +459,36 @@ Hoy no existía ninguna detección de "no llegó" — solo `Llegada Tarde` y `Al
 
 ---
 
+## 18. Fase 5: módulo HRM — carpeta del empleado + primer uso de Storage (2026-08-09)
+
+Alcance **acotado explícitamente con el usuario**, no la Fase 5 completa del roadmap original:
+- ✅ Carpeta del empleado (datos HR + documentos) y fotos de perfil **nuevas** → Supabase Storage.
+- ❌ Fuera de alcance (deuda técnica anotada): migrar fotos base64 ya existentes (`profile_photo`, `metadata.photo_evidence` — requeriría `service_role key`, que nunca debo tener) y la evidencia fotográfica del Kiosko (requiere política de escritura sin sesión, superficie nueva que se decidió no apurar). `InA_leave_requests.attachment_url` (pendiente desde la Fase 3) tampoco se conecta en este cambio.
+
+Primer uso de Supabase Storage en el proyecto — se validó el diseño con un agente de planeación dedicado antes de escribir la migración, dado el riesgo de seguridad más alto que las tablas normales (nunca antes usado, no se puede probar sin que el usuario lo corra). Hallazgos incorporados al diseño final:
+- `(storage.foldername(name))[1]::uuid` lanza excepción con rutas malformadas — una excepción en una policy aborta la evaluación completa, no solo esa fila. Se envuelve en `public.storage_object_org_id()` con manejo de excepción (devuelve `null` en vez de fallar).
+- **Toda policy de `storage.objects` debe filtrar `bucket_id` explícitamente** — es una sola tabla compartida por todos los buckets; sin el filtro, la policy de un bucket autoriza sin querer objetos de otro. Error común al configurar RLS de Storage, señalado explícitamente por el agente de revisión.
+- `employee-photos` es **público** a propósito — es la única opción consistente con no tocar el flujo del Kiosko (corre con anon key, sin sesión, y ya devuelve `profile_photo` a quien pase el PIN vía `kiosk_verify_pin`). No empeora la exposición: hoy cualquiera con la anon key ya puede obtener la foto de cualquier empleado fuerza-bruteando un PIN de 4-6 dígitos; con Storage la ruta no es adivinable y no hay policy de lectura/listado para nadie no autorizado.
+- `employee-documents` es **privado** (hoja de vida/adjuntos, más sensibles) — acceso vía `createSignedUrl()`, solo desde el panel admin autenticado.
+- Nombrar cada foto con sufijo único (`{org}/{uuid}-{timestamp}.jpg`) en vez de sobrescribir el mismo nombre, para evitar que el `Cache-Control` del bucket público sirva la foto vieja tras un re-registro.
+
+### Qué se implementó
+- **`supabase/migrations/0009_hrm_storage.sql`** (el usuario debe ejecutarla): tablas `InA_employee_hr_profile` (fecha de ingreso, estado civil, hijos, nivel de estudios, EPS, ARL, caja de compensación, fondo de pensión — RLS `is_admin_of_org`, mismo patrón ya usado repetidamente esta sesión) y `InA_employee_documents` (hoja de vida y adjuntos, `doc_type` distingue ambos). Buckets `employee-photos` (público, 5MB, solo imágenes) y `employee-documents` (privado, 15MB, PDF/imagen/Word), función helper `storage_object_org_id()`, políticas `employee_photos_admin_all`/`employee_documents_admin_all`.
+- **`frontend/src/types.ts`**: `EmployeeHrProfile`, `EmployeeDocument`, `DocType`.
+- **`frontend/src/components/EmployeeHrFolder.tsx`** (nuevo): modal con el formulario de datos HR (estado civil/nivel de estudios como `<select>` con opciones comunes, sin `check` en la BD) y la sección de documentos (subir con selector de tipo, ver/descargar vía URL firmada generada al click — no se pre-cargan todas al abrir el modal —, eliminar borra el objeto de Storage y la fila).
+- **`frontend/src/components/EmployeeManagement.tsx`**: nuevo botón por fila (ícono `FolderOpen`) que abre la Carpeta del Empleado. `handleCaptureFace` ahora sube la primera captura a `employee-photos` en vez de guardar el base64 directo, y borra (best-effort) la foto anterior si se está re-escaneando.
+- **`frontend/src/App.tsx`**: `EmployeeManagement` recibe `currentProfileId` (necesario para `uploaded_by` en los documentos).
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios, app cargando sin errores en pestaña nueva. **Pendiente para el usuario:**
+1. Ejecutar `0009_hrm_storage.sql` en Supabase DEV, confirmar buckets/policies con las queries de verificación al final.
+2. **Prueba cruzada de seguridad obligatoria** (mismo tipo de brecha ya encontrada y cerrada dos veces esta sesión en tablas normales): con dos organizaciones distintas, confirmar que un admin no puede subir/listar/borrar objetos en la carpeta de la otra, en ninguno de los dos buckets.
+3. Capturar la foto de un empleado nuevo, confirmar que queda como URL de Storage (no base64) y se ve bien en la tabla, en Auditoría y en el Kiosko.
+4. Abrir la Carpeta de un empleado, llenar y guardar los datos HR, reabrir y confirmar que persisten.
+5. Subir una hoja de vida y un documento "otro", confirmar que "Ver/Descargar" funciona y que eliminar borra archivo + fila.
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash

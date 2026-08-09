@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Profile, Company, ScheduleMode } from '../types';
-import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDown, Search, MapPin } from 'lucide-react';
+import { UserPlus, Pencil, Trash2, X, Save, Camera, CheckCircle2, FileUp, FileDown, Search, MapPin, FolderOpen } from 'lucide-react';
 import Webcam from 'react-webcam';
 import * as faceapi from 'face-api.js';
 import * as XLSX from 'xlsx';
 import { showToast } from '../lib/toastStore';
+import { EmployeeHrFolder } from './EmployeeHrFolder';
 
 interface EmployeeManagementProps {
     companyId: string | null;
+    currentProfileId?: string | null;
 }
 
 const DEFAULT_SCHEDULE = {
@@ -31,7 +33,7 @@ const dayNames: { [key: string]: string } = {
     sun: 'Domingo',
 };
 
-export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyId }) => {
+export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyId, currentProfileId }) => {
     const [profiles, setProfiles] = useState<Profile[]>([]);
     const [companies, setCompanies] = useState<Company[]>([]);
     const [loading, setLoading] = useState(true);
@@ -40,6 +42,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [isModelLoaded, setIsModelLoaded] = useState(false);
     const [faceCaptures, setFaceCaptures] = useState<number[][]>([]);
+    const [hrFolderFor, setHrFolderFor] = useState<Profile | null>(null);
     const webcamRef = useRef<Webcam>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -207,9 +210,33 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                     const newCaptures = [...faceCaptures, Array.from(detections.descriptor)];
                     setFaceCaptures(newCaptures);
 
-                    // Also save the photo on the first capture if not already set
+                    // Primera captura: sube la foto a Storage (employee-photos)
+                    // en vez de guardar el base64 directo — fotos NUEVAS solamente,
+                    // las ya existentes en base64 no se migran en este cambio.
                     if (newCaptures.length === 1) {
-                        setFormData(prev => ({ ...prev, profile_photo: imageSrc }));
+                        try {
+                            const blob = await (await fetch(imageSrc)).blob();
+                            const fileName = `${formData.organization_id}/${crypto.randomUUID()}-${Date.now()}.jpg`;
+                            const { error: uploadError } = await supabase.storage
+                                .from('employee-photos')
+                                .upload(fileName, blob, { contentType: 'image/jpeg' });
+                            if (uploadError) throw uploadError;
+
+                            const { data: { publicUrl } } = supabase.storage.from('employee-photos').getPublicUrl(fileName);
+
+                            // Best-effort: borra la foto anterior si se está re-escaneando
+                            const oldPath = formData.profile_photo?.includes('/employee-photos/')
+                                ? formData.profile_photo.split('/employee-photos/')[1]
+                                : null;
+                            if (oldPath) {
+                                supabase.storage.from('employee-photos').remove([oldPath]).catch(() => {});
+                            }
+
+                            setFormData(prev => ({ ...prev, profile_photo: publicUrl }));
+                        } catch (uploadErr: any) {
+                            console.error('Error subiendo foto de perfil:', uploadErr);
+                            showToast('Error subiendo la foto: ' + uploadErr.message, 'error');
+                        }
                     }
 
                     if (newCaptures.length >= 3) {
@@ -816,6 +843,13 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                                 <td className="px-8 py-6 text-right">
                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
                                         <button
+                                            onClick={() => setHrFolderFor(profile)}
+                                            className="p-3 bg-white/80 backdrop-blur-sm border shadow-sm rounded-2xl text-muted-foreground hover:bg-muted hover:text-foreground transition-all hover:scale-110 active:scale-90"
+                                            title="Ver Carpeta del Empleado"
+                                        >
+                                            <FolderOpen className="w-4.5 h-4.5" />
+                                        </button>
+                                        <button
                                             onClick={() => handleEdit(profile)}
                                             className="p-3 bg-white/80 backdrop-blur-sm border shadow-sm rounded-2xl text-primary hover:bg-primary hover:text-white transition-all hover:scale-110 active:scale-90"
                                         >
@@ -835,6 +869,15 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
                 </table>
               </div>
             </div>
+
+            {hrFolderFor && (
+                <EmployeeHrFolder
+                    profile={hrFolderFor}
+                    organizationId={hrFolderFor.organization_id || formData.organization_id || ''}
+                    currentProfileId={currentProfileId || null}
+                    onClose={() => setHrFolderFor(null)}
+                />
+            )}
         </div>
     );
 };
