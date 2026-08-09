@@ -375,7 +375,7 @@ function App() {
             <Menu className="w-6 h-6" />
           </button>
           <div className="hover:opacity-90 transition-opacity shrink-0">
-            <img src="/logo_horizontal.png" alt="Logo" className="h-[56px] lg:h-[110px] w-auto object-contain lg:-ml-8" />
+            <img src="/logo_horizontal.png" alt="Logo" className="h-[56px] lg:h-[110px] w-auto object-contain scale-125 lg:-ml-4" />
           </div>
           <div className="h-10 w-[2px] bg-primary/20 rounded-full hidden md:block" />
           <div className="hidden md:block">
