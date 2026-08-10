@@ -500,6 +500,33 @@ El usuario cargó datos de demo y notó que las novedades (`InA_leave_requests`)
 
 ---
 
+## 19. Fase 4 (cierre): RPC de nómina en el servidor — MODO SOMBRA (2026-08-09)
+
+Retoma el trabajo aplazado deliberadamente en la Fase 4 (mover el cálculo de nómina de `AdminDashboard.tsx`/`calculations.ts` al servidor). El asistente no tiene `service_role key` ni acceso de escritura a la base de datos, así que no se pudo probar el SQL contra datos reales antes de entregarlo — por eso este cambio se instala en **modo sombra**: no reemplaza el dashboard actual, solo agrega funciones RPC nuevas que se pueden comparar contra los números de hoy desde un panel aislado, superadmin-only. El cutover real (que el dashboard use el RPC en vez del cálculo en el navegador) queda para una fase futura, sujeta a que el usuario valide el modo sombra con datos reales.
+
+Antes de escribir el SQL se le pidió al usuario correr una consulta de introspección de solo lectura (`information_schema.columns`) contra DEV, porque ninguna migración en el repo contiene el `CREATE TABLE` original de `InA_profiles`/`InA_companies`/`InA_time_entries`/`InA_organizations` (son anteriores al historial de migraciones) — sin eso, escribir aritmética de nómina contra tipos solo inferidos del frontend era demasiado riesgoso.
+
+### Qué se implementó
+- **`supabase/migrations/0010_payroll_period_rpc.sql`** (el usuario debe ejecutarla completa, de una sola vez): traduce a PL/pgSQL, casi 1:1, `groupEntriesIntoShifts`/`getFirstInTime`/`classifyShiftMinutes` de `calculations.ts` y el loop de `AdminDashboard.tsx`'s `stats` useMemo (incluyendo las inconsistencias ya existentes que se preservan a propósito: la regla de `profileSched` distinta entre detección de tarde y cálculo de nómina, y el domingo que no colapsa a tarifa plana para el costo). Expone:
+  - `public.payroll_period_summary(company_id, start_date, end_date, profile_id?)` — mismo resumen por período que ya se ve hoy.
+  - `public.payroll_daily_breakdown(company_id, start_date, end_date, profile_id?)` — desglose día por día por empleado, **nuevo**, no existe hoy en ningún lugar.
+  - Ambas son envoltorios delgados sobre un motor privado (`_payroll_calc_daily`, no otorgado a `anon`/`authenticated`) para que "resumen del período" y "suma de los días" sean iguales por construcción.
+  - **Zona horaria fija `America/Bogota`** (confirmado con el usuario: todas las sedes operan en Colombia, sin horario de verano).
+  - **Ventana de consulta acotada** a ±2 días alrededor del rango pedido (en vez de escanear todo el historial como hoy) — aprobado explícitamente por el usuario como el cambio que realmente resuelve el problema de escala.
+  - **Divergencia deliberada y documentada** (no un descuido): la ausencia no justificada del servidor considera cualquier novedad aprobada sin importar el rol del perfil, mientras el navegador solo considera novedades de perfiles `role='employee'` por un efecto colateral de un fetch distinto — el servidor es la versión más segura para nómina (evita falsos positivos de ausencia).
+  - Migración con **42 autopruebas embebidas** (`DO $$...$$`, datos bajo una organización centinela `ZZ_SELFTEST_PAYROLL_ORG`, se borran siempre al final): turno ordinario, llegada tarde + extra diurna, turno que cruza a nocturno, domingo, horario abierto con y sin tope, pausa+regreso como un solo turno, turno abierto sin cerrar de un día pasado, `total_hours` explícito, remanente de redondeo de `extraNight` (turno de 48h), ausencia justificada vs no justificada, y el agregado del período completo contra un total calculado a mano. Si algo no coincide, `RAISE EXCEPTION` revierte TODA la migración (el editor SQL de Supabase corre el script pegado como una transacción implícita) — un RPC roto nunca queda instalado.
+- **`frontend/src/components/PayrollRpcShadowPanel.tsx`** (nuevo, completamente aislado — no toca `AdminDashboard.tsx` ni `calculations.ts`): calcula la referencia del navegador importando las funciones reales de producción, llama a `payroll_daily_breakdown`, y muestra una tabla de diferencias por empleado/campo (cliente vs. RPC, tolerancia ±0.5 min / ±$1) con detalle diario expandible por empleado.
+- **`frontend/src/App.tsx`**: nueva pestaña **"Nómina (Servidor) — Beta"**, visible solo para `superadmin`.
+
+### Verificado
+`npx tsc --noEmit` limpio, app cargando sin errores de consola. **No se pudo probar el flujo autenticado** (sin credenciales) ni ejecutar el SQL contra datos reales. **Pendiente para el usuario:**
+1. Ejecutar `0010_payroll_period_rpc.sql` completo en Supabase SQL Editor (DEV) y confirmar `PAYROLL_RPC_SELFTEST: 42/42 VERIFICACIONES OK` en los resultados — si falla, la migración se revierte sola y no queda nada instalado.
+2. Entrar como superadmin → pestaña "Nómina (Servidor) — Beta", elegir una sede y rango de fechas con datos reales (ideal: DEMO-CLIENTES, que ya tiene 30 días de marcaciones variadas) y correr la comparación.
+3. Revisar el contador "X de Y campos no coinciden" y el detalle diario de cualquier fila en rojo.
+4. Repetir con un rango que incluya un empleado de horario abierto, uno personalizado, y días con domingos o ausencias, antes de considerar el cutover real (fuera de alcance de este cambio).
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash

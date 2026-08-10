@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
-import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X, CalendarOff } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X, CalendarOff, FlaskConical } from 'lucide-react';
 import { KioskMode } from './components/KioskMode';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EmployeeManagement } from './components/EmployeeManagement';
@@ -14,9 +14,10 @@ import { OrganizationManagement } from './components/OrganizationManagement';
 import { LandingPage } from './components/LandingPage';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ToastContainer } from './components/ToastContainer';
+import { PayrollRpcShadowPanel } from './components/PayrollRpcShadowPanel';
 import { parseLatLng } from './utils/geoUtils';
 
-type ActiveTab = 'dashboard' | 'employees' | 'leaves' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations';
+type ActiveTab = 'dashboard' | 'employees' | 'leaves' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations' | 'rpc-shadow';
 
 function App() {
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -497,6 +498,12 @@ function App() {
                 >
                   <ShieldCheck className="w-4 h-4" /> Administradores
                 </button>
+                <button
+                  onClick={() => selectTab('rpc-shadow')}
+                  className={`w-full flex items-center gap-4 px-4 py-3 text-sm font-black rounded-2xl transition-all ${activeTab === 'rpc-shadow' ? 'bg-background border shadow-md text-primary scale-105' : 'text-muted-foreground hover:bg-muted/50'}`}
+                >
+                  <FlaskConical className="w-4 h-4" /> Nómina (Servidor) — Beta
+                </button>
               </>
             )}
           </div>
@@ -534,6 +541,8 @@ function App() {
               <AdminManagement />
             ) : activeTab === 'organizations' && userProfile?.role === 'superadmin' ? (
               <OrganizationManagement />
+            ) : activeTab === 'rpc-shadow' && userProfile?.role === 'superadmin' ? (
+              <PayrollRpcShadowPanel companyId={selectedCompanyId} />
             ) : (
               <div className="p-20 border-2 border-dashed rounded-[3rem] flex flex-col items-center justify-center text-muted-foreground bg-card animate-pulse">
                 <LayoutDashboard className="w-12 h-12 mb-4 opacity-20" />
