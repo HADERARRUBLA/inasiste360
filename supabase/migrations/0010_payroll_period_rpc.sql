@@ -24,13 +24,19 @@
 -- que todas las sedes operan en Colombia.
 --
 -- VENTANA DE CONSULTA: para no escanear el historial completo de marcaciones
--- de la sede (que es como funciona hoy y no escala), estas funciones limitan
--- la consulta de InA_time_entries a un margen de +/-2 días alrededor del
--- rango de fechas pedido, antes de agrupar en turnos. Esto es idéntico al
--- cálculo actual del navegador para cualquier turno normal (incluso turnos
--- que cruzan medianoche); solo podría diferir en el caso extremo de un turno
--- que quedó abierto (sin cierre) por más de ~48 horas seguidas — un dato ya
--- de por sí anómalo hoy. Aprobado explícitamente por el usuario.
+-- de la sede (que es como funciona hoy y no escala), estas funciones NO usan
+-- un margen fijo de +/-2 días: eso se probó primero y resultó incorrecto con
+-- datos reales (ver commit siguiente a la primera versión) — si el turno
+-- real de un empleado empezaba antes del margen fijo, la primera marcación
+-- que caía dentro de la ventana se malinterpretaba como inicio de turno,
+-- inflando el resultado. En su lugar, cada empleado tiene su propio límite
+-- inferior de consulta: se busca su última marcación de inicio de turno
+-- EXPLÍCITA antes del rango pedido (una búsqueda puntual, no un escaneo
+-- completo) y se arranca 2 días antes de esa fecha real (ver CTE
+-- profile_window_start). El límite superior sí se mantiene en
+-- p_end_date + 2 días — un turno no puede empezar en el futuro, así que ahí
+-- el margen fijo nunca infla el resultado, a lo sumo podría subestimar un
+-- turno todavía abierto que se extienda más allá del rango pedido.
 --
 -- DIVERGENCIA DELIBERADA (documentada, no un descuido): el filtro de
 -- ausencias no justificadas del navegador solo considera "cubierto por
@@ -229,18 +235,45 @@ begin
     profile_pool_scoped as (
         select * from profile_pool where p_profile_id is null or id = p_profile_id
     ),
-    -- Marcaciones de la sede con margen de +/-2 días (ver nota de ventana de
-    -- consulta en el encabezado), agrupadas en turnos igual que
-    -- groupEntriesIntoShifts() del frontend: un turno nuevo empieza en cada
-    -- 'in' que no sea is_return (o en la primera marcación de la persona si
-    -- los datos no empiezan con un 'in' explícito).
+    -- Límite inferior de la ventana de consulta, POR EMPLEADO: no es
+    -- simplemente "p_start_date - 2" a secas (eso puede cortar un turno que
+    -- realmente empezó mucho antes del rango pedido, y entonces la primera
+    -- marcación que quede dentro de la ventana —una pausa, un regreso,
+    -- cualquier cosa— se malinterpreta como si fuera el inicio de un turno
+    -- nuevo, inflando el resultado si termina emparejada con datos lejanos).
+    -- En vez de eso, se busca la última marcación de inicio de turno
+    -- EXPLÍCITA ('in', no is_return) de cada empleado, en cualquier fecha
+    -- hasta p_start_date, y se arranca 2 días antes de esa fecha real (o de
+    -- p_start_date si no hay ninguna, igual que antes). Esto nunca inventa
+    -- un inicio de turno falso, y solo hace una búsqueda puntual e indexable
+    -- por empleado — no vuelve a escanear todo el historial completo.
+    profile_window_start as (
+        select pps.id as profile_id,
+            coalesce(
+                (select te2.date from public."InA_time_entries" te2
+                 where te2.profile_id = pps.id and te2.company_id = p_company_id
+                   and coalesce(te2.event_type, '') = 'in'
+                   and coalesce((te2.metadata->>'is_return')::boolean, false) = false
+                   and te2.date <= p_start_date
+                 order by te2.created_at desc limit 1),
+                p_start_date
+            ) - 2 as window_start
+        from profile_pool_scoped pps
+    ),
+    -- Marcaciones de la sede desde el inicio de ventana calculado arriba
+    -- (por empleado) hasta p_end_date + 2 días, agrupadas en turnos igual
+    -- que groupEntriesIntoShifts() del frontend: un turno nuevo empieza en
+    -- cada 'in' que no sea is_return (o en la primera marcación de la
+    -- persona dentro de la ventana, si de verdad no hay ninguna marcación
+    -- de inicio explícita antes del rango — caso ya cubierto arriba).
     raw_entries as (
         select te.id, te.profile_id, te.date, te.clock_in, te.clock_out,
                te.total_hours, te.event_type, te.metadata, te.created_at
         from public."InA_time_entries" te
+        join profile_window_start pws on pws.profile_id = te.profile_id
         where te.company_id = p_company_id
           and te.profile_id in (select id from profile_pool_scoped)
-          and te.date between (p_start_date - 2) and (p_end_date + 2)
+          and te.date between pws.window_start and (p_end_date + 2)
     ),
     flagged as (
         select re.*,
