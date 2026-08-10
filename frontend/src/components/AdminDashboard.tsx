@@ -46,7 +46,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
     });
     const [selectedProfileId, setSelectedProfileId] = useState<string>('all');
     const [viewTab, setViewTab] = useState<'analytics' | 'reports'>(view);
-    const [reportType, setReportType] = useState<'employees' | 'hours' | 'alerts'>('employees');
+    const [reportType, setReportType] = useState<'employees' | 'hours' | 'alerts' | 'leaves'>('employees');
 
     // Sync viewTab if prop changes
     useEffect(() => {
@@ -54,15 +54,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
     }, [view]);
 
     const [company, setCompany] = useState<any>(null);
-    const [approvedLeaves, setApprovedLeaves] = useState<any[]>([]);
+    const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
 
-    // Novedades aprobadas de esta sede (principal + "de visita" multi-sede,
-    // mismo patrón que EmployeeManagement/LeaveManagement) — se usan para el
-    // panel informativo "Ausencias de Hoy", independiente del resto del
-    // cálculo de nómina/horas.
+    // Novedades de esta sede, TODOS los estados (principal + "de visita"
+    // multi-sede, mismo patrón que EmployeeManagement/LeaveManagement) — se
+    // usan para el panel "Ausencias de Hoy" (solo aprobadas), la exclusión
+    // de ausencias no justificadas (solo aprobadas), y la sección de
+    // Novedades en Reportes (todos los estados, para que el reporte del
+    // periodo sea completo).
     useEffect(() => {
-        const fetchApprovedLeaves = async () => {
-            if (!companyId) { setApprovedLeaves([]); return; }
+        const fetchLeaveRequests = async () => {
+            if (!companyId) { setLeaveRequests([]); return; }
             const { data: primaryEmps } = await supabase
                 .from('InA_profiles').select('id').eq('company_id', companyId).eq('role', 'employee');
             const { data: visitingEmps } = await supabase
@@ -75,17 +77,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             const { data: leaves, error } = await supabase
                 .from('InA_leave_requests')
                 .select('*, InA_profiles!profile_id(full_name)')
-                .eq('status', 'approved');
-            if (error) { console.error('Error cargando novedades aprobadas:', error); return; }
-            setApprovedLeaves((leaves || []).filter((l: any) => scopedIds.has(l.profile_id)));
+                .order('start_date', { ascending: false });
+            if (error) { console.error('Error cargando novedades:', error); return; }
+            setLeaveRequests((leaves || []).filter((l: any) => scopedIds.has(l.profile_id)));
         };
-        fetchApprovedLeaves();
+        fetchLeaveRequests();
     }, [companyId]);
 
     const todayAbsences = useMemo(() => {
         const todayStr = new Date().toLocaleDateString('en-CA');
-        return approvedLeaves.filter(l => l.start_date <= todayStr && l.end_date >= todayStr);
-    }, [approvedLeaves]);
+        return leaveRequests.filter(l => l.status === 'approved' && l.start_date <= todayStr && l.end_date >= todayStr);
+    }, [leaveRequests]);
+
+    const leaveRequestsInRange = useMemo(() => {
+        return leaveRequests.filter(l => l.start_date <= dateRange.end && l.end_date >= dateRange.start);
+    }, [leaveRequests, dateRange]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -259,7 +265,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                     const sched = profile.schedule_mode === 'branch' ? company?.work_schedule?.[dayCode] : profile.work_schedule?.[dayCode];
                     if (!sched?.active) return;
                     if (shiftGroupKeys.has(`${profile.id}_${dStr}`)) return;
-                    const onLeave = approvedLeaves.some((l: any) => l.profile_id === profile.id && l.start_date <= dStr && l.end_date >= dStr);
+                    const onLeave = leaveRequests.some((l: any) => l.status === 'approved' && l.profile_id === profile.id && l.start_date <= dStr && l.end_date >= dStr);
                     if (onLeave) return;
 
                     userSummaries[profile.id].unjustifiedAbsences++;
@@ -380,7 +386,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             alerts: alertEntries,
             userSummaries
         };
-    }, [entries, profiles, company, dateRange, selectedProfileId, approvedLeaves]);
+    }, [entries, profiles, company, dateRange, selectedProfileId, leaveRequests]);
 
     const chartData = useMemo(() => {
         const start = new Date(dateRange.start + 'T00:00:00');
@@ -502,6 +508,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         const alertHeaders = ['Colaborador', 'Tipo Alerta', 'Fecha/Hora', 'Descripcion'];
         const alertRows = stats.alerts.map((a: any) => [a.name, a.type, a.time, a.desc]);
 
+        // 4. Novedades Sheet (InA_leave_requests reales del periodo, no las alertas del sistema)
+        const leaveHeaders = ['Colaborador', 'Tipo', 'Fecha Inicio', 'Fecha Fin', 'Estado', 'Notas'];
+        const leaveRows = leaveRequestsInRange.map((l: any) => [
+            l.InA_profiles?.full_name || 'N/A',
+            LEAVE_TYPE_LABELS[l.type] || l.type,
+            l.start_date,
+            l.end_date,
+            l.status === 'pending' ? 'Pendiente' : l.status === 'approved' ? 'Aprobada' : 'Rechazada',
+            l.notes || ''
+        ]);
+
         const wb = XLSX.utils.book_new();
         
         const ws_summary = XLSX.utils.aoa_to_sheet([['RESUMEN DE ASISTENCIA Y NOMINA'], [`Periodo: ${dateRange.start} a ${dateRange.end}`], [], summaryHeaders, ...summaryRows]);
@@ -510,8 +527,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
         const ws_logs = XLSX.utils.aoa_to_sheet([['LOGS DETALLADOS'], [], logHeaders, ...logRows]);
         XLSX.utils.book_append_sheet(wb, ws_logs, "Logs de Eventos");
 
-        const ws_alerts = XLSX.utils.aoa_to_sheet([['ALERTAS Y NOVEDADES'], [], alertHeaders, ...alertRows]);
-        XLSX.utils.book_append_sheet(wb, ws_alerts, "Novedades");
+        const ws_alerts = XLSX.utils.aoa_to_sheet([['ALERTAS DEL SISTEMA'], [], alertHeaders, ...alertRows]);
+        XLSX.utils.book_append_sheet(wb, ws_alerts, "Alertas");
+
+        const ws_leaves = XLSX.utils.aoa_to_sheet([['NOVEDADES DEL PERIODO'], [`Periodo: ${dateRange.start} a ${dateRange.end}`], [], leaveHeaders, ...leaveRows]);
+        XLSX.utils.book_append_sheet(wb, ws_leaves, "Novedades");
 
         XLSX.writeFile(wb, `asiste360_reporte_completo_${dateRange.start}_a_${dateRange.end}.xlsx`);
     };
@@ -789,7 +809,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                     <div className="flex items-center gap-4 border-b pb-6">
                         <button onClick={() => setReportType('employees')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'employees' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>1. Condiciones</button>
                         <button onClick={() => setReportType('hours')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'hours' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>2. Horas Detalladas</button>
-                        <button onClick={() => setReportType('alerts')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'alerts' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>3. Novedades</button>
+                        <button onClick={() => setReportType('alerts')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'alerts' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>3. Alertas del Sistema</button>
+                        <button onClick={() => setReportType('leaves')} className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${reportType === 'leaves' ? 'bg-primary/10 text-primary border border-primary/20' : 'text-muted-foreground'}`}>4. Novedades</button>
                         <div className="ml-auto">
                             <button onClick={exportToICG} className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black shadow-lg hover:bg-blue-700 transition-all active:scale-95 mr-2">
                                 <FileDown className="w-4 h-4" /> EXPORTAR ICG
@@ -877,18 +898,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                                     })}
                                 </tbody>
                             </table>
-                        ) : (
+                        ) : reportType === 'alerts' ? (
                             <table className="w-full text-left">
                                 <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
                                     <tr>
                                         <th className="px-8 py-5">Colaborador</th>
-                                        <th className="px-8 py-5">Tipo Novedad</th>
+                                        <th className="px-8 py-5">Tipo de Alerta</th>
                                         <th className="px-8 py-5">Hora</th>
                                         <th className="px-8 py-5">Detalle</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y text-xs font-bold">
-                                    {stats.alerts.map((a: any, i: number) => (
+                                    {stats.alerts.length === 0 ? (
+                                        <tr><td colSpan={4} className="px-8 py-16 text-center text-muted-foreground font-black uppercase text-xs tracking-widest opacity-30 italic">Sin alertas en el periodo</td></tr>
+                                    ) : stats.alerts.map((a: any, i: number) => (
                                         <tr key={i} className="hover:bg-muted/30 transition-all">
                                             <td className="px-8 py-5">{a.name}</td>
                                             <td className="px-8 py-5">
@@ -896,6 +919,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                                             </td>
                                             <td className="px-8 py-5">{a.time}</td>
                                             <td className="px-8 py-5 text-muted-foreground font-black italic">{a.desc}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <table className="w-full text-left">
+                                <thead className="bg-muted/30 text-muted-foreground text-[10px] font-black uppercase tracking-[0.2em]">
+                                    <tr>
+                                        <th className="px-8 py-5">Colaborador</th>
+                                        <th className="px-8 py-5">Tipo</th>
+                                        <th className="px-8 py-5">Periodo</th>
+                                        <th className="px-8 py-5">Estado</th>
+                                        <th className="px-8 py-5">Notas</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y text-xs font-bold">
+                                    {leaveRequestsInRange.length === 0 ? (
+                                        <tr><td colSpan={5} className="px-8 py-16 text-center text-muted-foreground font-black uppercase text-xs tracking-widest opacity-30 italic">Sin novedades en el periodo seleccionado</td></tr>
+                                    ) : leaveRequestsInRange.map((l: any) => (
+                                        <tr key={l.id} className="hover:bg-muted/30 transition-all">
+                                            <td className="px-8 py-5">{l.InA_profiles?.full_name || 'N/A'}</td>
+                                            <td className="px-8 py-5">{LEAVE_TYPE_LABELS[l.type] || l.type}</td>
+                                            <td className="px-8 py-5 text-muted-foreground">{l.start_date} → {l.end_date}</td>
+                                            <td className="px-8 py-5">
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] uppercase ${l.status === 'pending' ? 'bg-amber-100 text-amber-700' : l.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {l.status === 'pending' ? 'Pendiente' : l.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-5 text-muted-foreground font-black italic">{l.notes || '---'}</td>
                                         </tr>
                                     ))}
                                 </tbody>

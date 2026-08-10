@@ -487,6 +487,17 @@ Primer uso de Supabase Storage en el proyecto — se validó el diseño con un a
 4. Abrir la Carpeta de un empleado, llenar y guardar los datos HR, reabrir y confirmar que persisten.
 5. Subir una hoja de vida y un documento "otro", confirmar que "Ver/Descargar" funciona y que eliminar borra archivo + fila.
 
+### Fix: "Novedades" en Reportes no mostraba novedades reales (2026-08-09)
+El usuario cargó datos de demo y notó que las novedades (`InA_leave_requests`) no aparecían en `AdminDashboard.tsx` → Reportes → pestaña "Novedades". **Bug real, preexistente a esta sesión**: esa pestaña (`reportType === 'alerts'`) siempre mostró `stats.alerts` — las alertas del sistema (Llegada Tarde, Alerta Horas Extras, Ausencia No Justificada) — nunca estuvo conectada a la tabla real de novedades. La columna incluso se llamaba literalmente "Tipo Novedad" mostrando datos de alertas. El mismo problema existía en la hoja "Novedades" del Excel exportado (`exportToExcel`).
+
+**Corregido:**
+- Pestaña "3." renombrada a **"Alertas del Sistema"** (sigue mostrando `stats.alerts`, sin cambios de datos, solo de nombre — ya no es ambiguo).
+- Nueva pestaña **"4. Novedades"**, con las novedades reales del periodo seleccionado (`leaveRequestsInRange`, filtradas por rango de fechas superpuesto con `dateRange`), mismo alcance multi-sede que el resto del dashboard.
+- El fetch de novedades (antes `approvedLeaves`, solo `status='approved'`) se renombró a `leaveRequests` y ahora trae **todos los estados** — los usos que necesitaban solo aprobadas (panel "Ausencias de Hoy", exclusión de ausencia no justificada) filtran `status === 'approved'` en el punto de uso.
+- `exportToExcel`: hoja "Alertas" (antes mal llamada "Novedades", solo alertas) + nueva hoja **"Novedades"** real con las novedades del periodo.
+
+**Verificado:** `tsc`/`build` limpios, sin errores en consola.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente
