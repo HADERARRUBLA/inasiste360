@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { showToast } from '../lib/toastStore';
 import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes } from '../utils/calculations';
+import { fetchAllRows } from '../utils/supabasePagination';
 
 interface AdminDashboardProps {
     companyId: string | null;
@@ -112,7 +113,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                     { data: visitingProfiles, error: visitingError }
                 ] = await Promise.all([
                     supabase.from('InA_companies').select('*').eq('id', companyId).single(),
-                    supabase.from('InA_time_entries').select('*, InA_profiles(*)').eq('company_id', companyId).order('created_at', { ascending: false }),
+                    // Paginado con fetchAllRows: Supabase limita cada consulta
+                    // a 1000 filas por defecto, y una sede con suficiente
+                    // historial de marcaciones supera eso fácilmente — sin
+                    // paginar, se pierden marcaciones (y por lo tanto horas y
+                    // empleados enteros) en silencio, sin ningún error.
+                    // order() incluye 'id' como desempate: sin un orden 100%
+                    // determinístico, filas con el mismo created_at pueden
+                    // repetirse o perderse entre páginas de .range().
+                    fetchAllRows((from, to) =>
+                        supabase.from('InA_time_entries').select('*, InA_profiles(*)').eq('company_id', companyId).order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)
+                    ),
                     // Perfiles: sede principal + empleados "de visita" multi-sede
                     // (mismo patrón ya usado en EmployeeManagement.tsx y
                     // LeaveManagement.tsx) — sin esto, las horas trabajadas por

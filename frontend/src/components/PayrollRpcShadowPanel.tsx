@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes } from '../utils/calculations';
+import { fetchAllRows } from '../utils/supabasePagination';
 
 interface PayrollRpcShadowPanelProps {
     companyId: string | null;
@@ -194,7 +195,9 @@ export const PayrollRpcShadowPanel: React.FC<PayrollRpcShadowPanelProps> = ({ co
         try {
             const [{ data: compData }, { data: entryData, error: entryError }, { data: primaryProfiles, error: profileError }, { data: visitingProfiles, error: visitingError }] = await Promise.all([
                 supabase.from('InA_companies').select('*').eq('id', companyId).single(),
-                supabase.from('InA_time_entries').select('*').eq('company_id', companyId),
+                fetchAllRows((from, to) =>
+                    supabase.from('InA_time_entries').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to)
+                ),
                 supabase.from('InA_profiles').select('*').eq('company_id', companyId),
                 supabase.from('InA_profiles').select('*, assigned_branches:InA_employee_branches!inner(branch_id)').eq('assigned_branches.branch_id', companyId)
             ]);
