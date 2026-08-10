@@ -65,20 +65,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
     useEffect(() => {
         const fetchLeaveRequests = async () => {
             if (!companyId) { setLeaveRequests([]); return; }
-            const { data: primaryEmps } = await supabase
-                .from('InA_profiles').select('id').eq('company_id', companyId).eq('role', 'employee');
-            const { data: visitingEmps } = await supabase
-                .from('InA_profiles')
-                .select('id, assigned_branches:InA_employee_branches!inner(branch_id)')
-                .eq('role', 'employee')
-                .eq('assigned_branches.branch_id', companyId);
-            const scopedIds = new Set([...(primaryEmps || []).map((e: any) => e.id), ...(visitingEmps || []).map((e: any) => e.id)]);
-
-            const { data: leaves, error } = await supabase
-                .from('InA_leave_requests')
-                .select('*, InA_profiles!profile_id(full_name)')
-                .order('start_date', { ascending: false });
+            // Las 3 consultas son independientes entre sí — lanzarlas en
+            // paralelo en vez de esperar una tras otra reduce el tiempo de
+            // carga a el de la más lenta, no a la suma de las tres.
+            const [{ data: primaryEmps }, { data: visitingEmps }, { data: leaves, error }] = await Promise.all([
+                supabase.from('InA_profiles').select('id').eq('company_id', companyId).eq('role', 'employee'),
+                supabase
+                    .from('InA_profiles')
+                    .select('id, assigned_branches:InA_employee_branches!inner(branch_id)')
+                    .eq('role', 'employee')
+                    .eq('assigned_branches.branch_id', companyId),
+                supabase
+                    .from('InA_leave_requests')
+                    .select('*, InA_profiles!profile_id(full_name)')
+                    .order('start_date', { ascending: false })
+            ]);
             if (error) { console.error('Error cargando novedades:', error); return; }
+            const scopedIds = new Set([...(primaryEmps || []).map((e: any) => e.id), ...(visitingEmps || []).map((e: any) => e.id)]);
             setLeaveRequests((leaves || []).filter((l: any) => scopedIds.has(l.profile_id)));
         };
         fetchLeaveRequests();
@@ -99,40 +102,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             try {
                 if (!companyId) return;
 
-                // Fetch Company Settings
-                const { data: compData } = await supabase
-                    .from('InA_companies')
-                    .select('*')
-                    .eq('id', companyId)
-                    .single();
-                setCompany(compData);
+                // Las 4 consultas no dependen entre sí — lanzarlas juntas con
+                // Promise.all en vez de una tras otra evita sumar la latencia
+                // de cada viaje de ida y vuelta al servidor.
+                const [
+                    { data: compData },
+                    { data: entryData, error: entryError },
+                    { data: primaryProfiles, error: profileError },
+                    { data: visitingProfiles, error: visitingError }
+                ] = await Promise.all([
+                    supabase.from('InA_companies').select('*').eq('id', companyId).single(),
+                    supabase.from('InA_time_entries').select('*, InA_profiles(*)').eq('company_id', companyId).order('created_at', { ascending: false }),
+                    // Perfiles: sede principal + empleados "de visita" multi-sede
+                    // (mismo patrón ya usado en EmployeeManagement.tsx y
+                    // LeaveManagement.tsx) — sin esto, las horas trabajadas por
+                    // un empleado multi-sede en esta sede no se contaban en
+                    // ningún dashboard de nómina.
+                    supabase.from('InA_profiles').select('*').eq('company_id', companyId).order('full_name'),
+                    supabase.from('InA_profiles').select('*, assigned_branches:InA_employee_branches!inner(branch_id)').eq('assigned_branches.branch_id', companyId)
+                ]);
 
-                // Fetch Time Entries
-                const { data: entryData, error: entryError } = await supabase
-                    .from('InA_time_entries')
-                    .select('*, InA_profiles(*)')
-                    .eq('company_id', companyId)
-                    .order('created_at', { ascending: false });
+                setCompany(compData);
 
                 if (entryError) throw entryError;
                 setEntries(entryData || []);
 
-                // Fetch Full Profiles: sede principal + empleados "de visita"
-                // multi-sede (mismo patrón ya usado en EmployeeManagement.tsx
-                // y LeaveManagement.tsx) — sin esto, las horas trabajadas por
-                // un empleado multi-sede en esta sede no se contaban en
-                // ningún dashboard de nómina.
-                const { data: primaryProfiles, error: profileError } = await supabase
-                    .from('InA_profiles')
-                    .select('*')
-                    .eq('company_id', companyId)
-                    .order('full_name');
                 if (profileError) throw profileError;
-
-                const { data: visitingProfiles, error: visitingError } = await supabase
-                    .from('InA_profiles')
-                    .select('*, assigned_branches:InA_employee_branches!inner(branch_id)')
-                    .eq('assigned_branches.branch_id', companyId);
                 if (visitingError) throw visitingError;
 
                 const mergedProfiles = [...(primaryProfiles || [])];

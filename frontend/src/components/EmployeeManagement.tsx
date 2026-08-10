@@ -127,19 +127,16 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ companyI
         }
         setLoading(true);
         try {
-            // Empleados con esta sede como principal
-            const { data: primary, error } = await supabase
-                .from('InA_profiles')
-                .select('*, assigned_branches:InA_employee_branches(branch_id)')
-                .eq('company_id', targetId as string)
-                .order('full_name');
+            // Las dos consultas son independientes — en paralelo en vez de
+            // una tras otra.
+            const [
+                { data: primary, error },              // empleados con esta sede como principal
+                { data: visiting, error: visitingError } // + autorizados aquí como sede adicional (sede principal distinta)
+            ] = await Promise.all([
+                supabase.from('InA_profiles').select('*, assigned_branches:InA_employee_branches(branch_id)').eq('company_id', targetId as string).order('full_name'),
+                supabase.from('InA_profiles').select('*, assigned_branches:InA_employee_branches!inner(branch_id)').eq('assigned_branches.branch_id', targetId as string)
+            ]);
             if (error) throw error;
-
-            // + empleados autorizados aquí como sede adicional (sede principal distinta)
-            const { data: visiting, error: visitingError } = await supabase
-                .from('InA_profiles')
-                .select('*, assigned_branches:InA_employee_branches!inner(branch_id)')
-                .eq('assigned_branches.branch_id', targetId as string);
             if (visitingError) throw visitingError;
 
             const combined = [...(primary || [])];

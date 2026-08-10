@@ -57,22 +57,21 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
         if (!companyId) { setLoading(false); onPendingCountChange?.(0); return; }
         setLoading(true);
         try {
-            // Empleados con esta sede como principal...
-            const { data: primaryEmps, error: empError } = await supabase
-                .from('InA_profiles')
-                .select('id, full_name, national_id')
-                .eq('company_id', companyId)
-                .eq('role', 'employee')
-                .order('full_name');
+            // Las 3 consultas son independientes entre sí (la de novedades no
+            // depende de la lista de empleados, se filtra después en memoria)
+            // — lanzarlas en paralelo evita sumar la latencia de cada una.
+            const [
+                { data: primaryEmps, error: empError },   // empleados con esta sede como principal...
+                { data: visitingEmps, error: visitingError }, // ...+ autorizados aquí como sede adicional (multi-sede)
+                { data: reqs, error: reqError }
+            ] = await Promise.all([
+                supabase.from('InA_profiles').select('id, full_name, national_id').eq('company_id', companyId).eq('role', 'employee').order('full_name'),
+                supabase.from('InA_profiles').select('id, full_name, national_id, assigned_branches:InA_employee_branches!inner(branch_id)').eq('role', 'employee').eq('assigned_branches.branch_id', companyId),
+                supabase.from('InA_leave_requests').select('*, InA_profiles!profile_id(id, full_name, national_id, company_id)').order('start_date', { ascending: false })
+            ]);
             if (empError) throw empError;
-
-            // ...+ empleados autorizados aquí como sede adicional (multi-sede).
-            const { data: visitingEmps, error: visitingError } = await supabase
-                .from('InA_profiles')
-                .select('id, full_name, national_id, assigned_branches:InA_employee_branches!inner(branch_id)')
-                .eq('role', 'employee')
-                .eq('assigned_branches.branch_id', companyId);
             if (visitingError) throw visitingError;
+            if (reqError) throw reqError;
 
             const mergedEmps = [...(primaryEmps || [])];
             (visitingEmps || []).forEach((v: any) => {
@@ -80,12 +79,6 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
             });
             mergedEmps.sort((a, b) => a.full_name.localeCompare(b.full_name));
             setEmployees(mergedEmps);
-
-            const { data: reqs, error: reqError } = await supabase
-                .from('InA_leave_requests')
-                .select('*, InA_profiles!profile_id(id, full_name, national_id, company_id)')
-                .order('start_date', { ascending: false });
-            if (reqError) throw reqError;
             // Novedades de empleados con esta sede como principal O de visita
             // (mismo criterio que el picker de arriba, para que una novedad
             // recién creada para un empleado "de visita" no desaparezca).
