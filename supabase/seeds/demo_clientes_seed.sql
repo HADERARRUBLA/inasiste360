@@ -103,40 +103,49 @@ begin
                 v_workday_hours := 9 + 2 + floor(random() * 3); -- jornada de 11 a 13 horas ese día
             end if;
 
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'in', v_day, v_day_start, true,
+            -- created_at se fija explícitamente igual a clock_in en cada
+            -- marcación (en vez de dejar el default now()): al insertar todo
+            -- este script en una sola transacción, now() devuelve el MISMO
+            -- valor para todas las filas, y varias funciones (incluida
+            -- payroll_daily_breakdown) ordenan las marcaciones por created_at
+            -- para reconstruir los turnos — con todas empatadas, el orden
+            -- real se pierde y se pueden mezclar marcaciones de días
+            -- distintos como si fueran un solo turno.
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'in', v_day, v_day_start, v_day_start, true,
                 jsonb_build_object('event_label', 'Inicio de Día', 'method', 'pin-only', 'is_return', false, 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
 
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'breakfast', v_day, v_day_start + interval '2 hours', true,
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'breakfast', v_day, v_day_start + interval '2 hours', v_day_start + interval '2 hours', true,
                 jsonb_build_object('event_label', 'Pausa Desayuno', 'method', 'pin-only', 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'in', v_day, v_day_start + interval '2 hours 15 minutes', true,
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'in', v_day, v_day_start + interval '2 hours 15 minutes', v_day_start + interval '2 hours 15 minutes', true,
                 jsonb_build_object('event_label', 'Regreso de Pausa Desayuno', 'method', 'pin-only', 'is_return', true, 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
 
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'lunch', v_day, v_day_start + interval '4 hours 30 minutes', true,
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'lunch', v_day, v_day_start + interval '4 hours 30 minutes', v_day_start + interval '4 hours 30 minutes', true,
                 jsonb_build_object('event_label', 'Pausa Almuerzo', 'method', 'pin-only', 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'in', v_day, v_day_start + interval '5 hours 15 minutes', true,
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'in', v_day, v_day_start + interval '5 hours 15 minutes', v_day_start + interval '5 hours 15 minutes', true,
                 jsonb_build_object('event_label', 'Regreso de Pausa Almuerzo', 'method', 'pin-only', 'is_return', true, 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
 
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'active_pause', v_day, v_day_start + interval '7 hours', true,
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'active_pause', v_day, v_day_start + interval '7 hours', v_day_start + interval '7 hours', true,
                 jsonb_build_object('event_label', 'Pausa Activa', 'method', 'pin-only', 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, is_verified, metadata)
-            select v_employee_id, p.company_id, 'in', v_day, v_day_start + interval '7 hours 15 minutes', true,
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, created_at, is_verified, metadata)
+            select v_employee_id, p.company_id, 'in', v_day, v_day_start + interval '7 hours 15 minutes', v_day_start + interval '7 hours 15 minutes', true,
                 jsonb_build_object('event_label', 'Regreso de Pausa Activa', 'method', 'pin-only', 'is_return', true, 'seed_tag', v_seed_tag)
             from public."InA_profiles" p where p.id = v_employee_id;
 
-            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, clock_out, is_verified, metadata)
+            insert into public."InA_time_entries" (profile_id, company_id, event_type, date, clock_in, clock_out, created_at, is_verified, metadata)
             select v_employee_id, p.company_id, 'out', v_day,
+                v_day_start + (v_workday_hours || ' hours')::interval,
                 v_day_start + (v_workday_hours || ' hours')::interval,
                 v_day_start + (v_workday_hours || ' hours')::interval,
                 true,

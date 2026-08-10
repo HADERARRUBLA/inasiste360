@@ -255,7 +255,7 @@ begin
                    and coalesce(te2.event_type, '') = 'in'
                    and coalesce((te2.metadata->>'is_return')::boolean, false) = false
                    and te2.date <= p_start_date
-                 order by te2.created_at desc limit 1),
+                 order by te2.clock_in desc limit 1),
                 p_start_date
             ) - 2 as window_start
         from profile_pool_scoped pps
@@ -278,7 +278,15 @@ begin
     flagged as (
         select re.*,
             (coalesce(re.event_type, '') = 'in' and coalesce((re.metadata->>'is_return')::boolean, false) = false) as is_explicit_start,
-            row_number() over (partition by re.profile_id order by re.created_at, re.id) as rn
+            -- Se ordena por clock_in (no por created_at): clock_in es distinto
+            -- y correcto en cada marcación, mientras que created_at puede
+            -- repetirse exactamente si varias filas se insertaron en la misma
+            -- transacción (p.ej. un script de carga de datos de demo) — con
+            -- created_at empatado, desempatar por id (aleatorio) revuelve el
+            -- orden real y arma turnos con marcaciones de días distintos. En
+            -- el uso real del Kiosko clock_in y created_at son prácticamente
+            -- el mismo instante siempre, así que esto no cambia nada ahí.
+            row_number() over (partition by re.profile_id order by re.clock_in, re.id) as rn
         from raw_entries re
     ),
     shift_marked as (
@@ -296,14 +304,14 @@ begin
     shift_seq_calc as (
         select sm.*,
             sum(case when is_shift_start then 1 else 0 end) over (
-                partition by sm.profile_id order by sm.created_at, sm.id rows unbounded preceding
+                partition by sm.profile_id order by sm.clock_in, sm.id rows unbounded preceding
             ) as shift_seq
         from shift_marked sm
     ),
     shifts as (
         select ssc.*,
-            first_value(ssc.date) over (partition by ssc.profile_id, ssc.shift_seq order by ssc.created_at, ssc.id) as anchor_date,
-            lead(ssc.clock_in) over (partition by ssc.profile_id, ssc.shift_seq order by ssc.created_at, ssc.id) as next_clock_in
+            first_value(ssc.date) over (partition by ssc.profile_id, ssc.shift_seq order by ssc.clock_in, ssc.id) as anchor_date,
+            lead(ssc.clock_in) over (partition by ssc.profile_id, ssc.shift_seq order by ssc.clock_in, ssc.id) as next_clock_in
         from shift_seq_calc ssc
     ),
     shifts_in_range as (
