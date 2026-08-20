@@ -74,6 +74,23 @@ export const AdminManagement: React.FC = () => {
         fetchData();
     }, []);
 
+    const blankFormData = {
+        id: '',
+        full_name: '',
+        national_id: '',
+        company_id: '',
+        organization_id: '',
+        role: 'admin' as UserRole,
+        password: '',
+        managed_branches: [] as string[]
+    };
+
+    const handleAddNew = () => {
+        setFormData(blankFormData);
+        setStatus(null);
+        setIsAdding(true);
+    };
+
     const handleEdit = (admin: any) => {
         setFormData({
             id: admin.id,
@@ -201,7 +218,7 @@ export const AdminManagement: React.FC = () => {
                 </div>
                 {!isAdding && (
                     <button
-                        onClick={() => setIsAdding(true)}
+                        onClick={handleAddNew}
                         className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-2xl font-black shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
                     >
                         <UserPlus className="w-5 h-5" /> Registrar Admin
@@ -218,7 +235,7 @@ export const AdminManagement: React.FC = () => {
 
             {isAdding && (
                 <div className="bg-card border rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
-                    <button onClick={() => setIsAdding(false)} className="absolute top-6 right-6 p-2 hover:bg-muted rounded-full transition-colors">
+                    <button onClick={() => { setIsAdding(false); setFormData(blankFormData); }} className="absolute top-6 right-6 p-2 hover:bg-muted rounded-full transition-colors">
                         <X className="w-6 h-6" />
                     </button>
                     <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-8">
