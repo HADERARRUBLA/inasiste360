@@ -638,10 +638,18 @@ Actualizado para pedir y comparar `late_minutes` (nuevo campo numérico, con la 
 Nuevo módulo separado, no más pestañas dentro de `AdminDashboard.tsx`. Nueva entrada de menú "Informes" en `App.tsx` (visible para `admin` y `superadmin`, no solo superadmin — a diferencia del panel Beta de nómina). Selector de sede (heredado, ya seleccionada globalmente) + rango de fechas (default: últimos 30 días) + botón "Generar Informe" que llama `payroll_daily_breakdown`. Tabla con: empleado, fecha, minutos trabajados, desayuno, almuerzo, ordinaria, extra diurna/nocturna/dominical, minutos de tardanza, novedad (tipo, si aplica, o "Ausencia Injustificada"), costo. Filas en cero completo se ocultan (evita una tabla enorme de días sin nada que mostrar). Exportable a Excel con el mismo patrón ya usado en `AdminDashboard.tsx` (`XLSX.utils.aoa_to_sheet` + `book_append_sheet` + `writeFile`) — sin el límite de 1000 filas porque viene del RPC, no de una consulta directa a `InA_time_entries`.
 
 ### Verificado
-`npx tsc --noEmit` y `npm run build` limpios. **No se pudo probar contra datos reales** (sin acceso de escritura/autenticado a ninguna instancia). **Pendiente para el usuario:**
-1. Ejecutar `0011_payroll_daily_breakdown_v2.sql` completo en el SQL Editor de la instancia de Producción, confirmar `PAYROLL_RPC_SELFTEST_V2: 45/45 VERIFICACIONES OK` — si falla, la migración se revierte sola.
-2. Repetir la comparación en "Nómina (Servidor) — Beta" con un rango que incluya domingos y alguna novedad aprobada — debe seguir dando 0 de N coincidencias (ahora con `late_minutes` incluido en el conteo).
-3. Probar el Informe 1 en el panel nuevo "Informes" con datos reales de una sede, confirmar que el tipo de novedad se ve correcto en los días cubiertos, y que el Excel exportado abre bien.
+`npx tsc --noEmit` y `npm run build` limpios. **No se pudo probar contra datos reales** (sin acceso de escritura/autenticado a ninguna instancia).
+
+### Probado en vivo por el usuario (2026-08-20)
+Migración `0011` corrida con éxito en la instancia de pruebas (`45/45 OK`) y en Producción. Probado el Informe 1 con `DEMO-CLIENTES`: con el rango por defecto (últimos 30 días desde hoy) todo salió en cero — **no era un bug**, los datos de demo están fechados en julio, fuera de ese rango. Al poner julio manualmente, los datos aparecieron correctos.
+
+### Ajustes pedidos tras la prueba, implementados el mismo día
+1. **Filtro por empleado específico**: el RPC ya soportaba `p_profile_id`, solo faltaba exponerlo. Se agregó un selector "Empleado" (default "Todos") en `ReportsCenter.tsx`, con la misma lista fusionada (sede principal + autorizados como sede adicional) que ya usa `LeaveManagement.tsx`.
+2. **Indicador de empleado multi-sede**: si un empleado tiene horas registradas en OTRA sede el mismo día que se muestra, aparece un badge junto a su nombre ("+3.5h otra sede", con el detalle por sede al pasar el mouse) — para que no se lea como si le faltaran horas en el turno de esta sede. Confirmado con el usuario el diseño exacto: nota en la misma fila, no una columna aparte ni un informe combinado.
+   - Implementado con una consulta cliente-side separada y aproximada (suma `total_hours` o `clock_out - clock_in` por marcación, sin agrupar por turno como sí hace el motor de nómina real) — es solo informativo, para avisar que hay actividad en otra sede, **no reemplaza ningún cálculo de nómina**. Usa `fetchAllRows` para no repetir el bug de las 1000 filas.
+   - También se agregó al Excel exportado como columna "Horas en Otra Sede (mismo día)".
+
+Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo:** el filtro por empleado, y el badge de multi-sede con un caso real (un empleado con marcaciones en 2 sedes el mismo día).
 
 ---
 

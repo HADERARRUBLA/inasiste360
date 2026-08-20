@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
-import { FileDown, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { FileDown, Loader2, RefreshCw, AlertTriangle, MapPinned } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
+import { fetchAllRows } from '../utils/supabasePagination';
 
 interface ReportsCenterProps {
     companyId: string | null;
@@ -52,15 +53,95 @@ const fmtMin = (min: number) => {
 
 const fmtCost = (n: number) => Math.round(n || 0).toLocaleString('es-CO');
 
+interface OtherSedeInfo {
+    totalMinutes: number;
+    bySede: { name: string; minutes: number }[];
+}
+
 export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, companyName }) => {
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 30)).toLocaleDateString('en-CA'),
         end: new Date().toLocaleDateString('en-CA')
     });
+    const [employees, setEmployees] = useState<{ id: string; full_name: string; national_id: string }[]>([]);
+    const [selectedProfileId, setSelectedProfileId] = useState('all');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [rows, setRows] = useState<DailyRow[]>([]);
     const [hasRun, setHasRun] = useState(false);
+    // Horas del mismo empleado en OTRAS sedes, el mismo día — para que un
+    // empleado multi-sede no se vea como si le faltaran horas en este
+    // informe (confirmado con el usuario 2026-08-20: nota en la misma fila,
+    // no una columna aparte ni un informe combinado).
+    const [otherSedeMap, setOtherSedeMap] = useState<Record<string, OtherSedeInfo>>({});
+
+    useEffect(() => {
+        setSelectedProfileId('all');
+        setRows([]);
+        setHasRun(false);
+        if (!companyId) { setEmployees([]); return; }
+        (async () => {
+            // Mismo patrón de fusión de LeaveManagement.tsx: empleados con esta
+            // sede como principal + autorizados aquí como sede adicional.
+            const [{ data: primary }, { data: visiting }] = await Promise.all([
+                supabase.from('InA_profiles').select('id, full_name, national_id').eq('company_id', companyId).order('full_name'),
+                supabase.from('InA_profiles').select('id, full_name, national_id, assigned_branches:InA_employee_branches!inner(branch_id)').eq('assigned_branches.branch_id', companyId)
+            ]);
+            const merged = [...(primary || [])];
+            (visiting || []).forEach((v: any) => { if (!merged.find(e => e.id === v.id)) merged.push(v); });
+            merged.sort((a, b) => a.full_name.localeCompare(b.full_name));
+            setEmployees(merged);
+        })();
+    }, [companyId]);
+
+    const fetchOtherSedeHours = async (profileIds: string[]) => {
+        if (profileIds.length === 0) { setOtherSedeMap({}); return; }
+        try {
+            const { data: otherEntries, error: entriesError } = await fetchAllRows((from, to) =>
+                supabase.from('InA_time_entries')
+                    .select('profile_id, date, company_id, clock_in, clock_out, total_hours, event_type')
+                    .in('profile_id', profileIds)
+                    .neq('company_id', companyId)
+                    .gte('date', dateRange.start).lte('date', dateRange.end)
+                    .in('event_type', ['in', 'out'])
+                    .range(from, to)
+            );
+            if (entriesError) throw entriesError;
+            if (!otherEntries || otherEntries.length === 0) { setOtherSedeMap({}); return; }
+
+            const otherCompanyIds = Array.from(new Set(otherEntries.map((e: any) => e.company_id).filter(Boolean)));
+            const { data: companies } = await supabase.from('InA_companies').select('id, name').in('id', otherCompanyIds);
+            const companyNames: Record<string, string> = {};
+            (companies || []).forEach((c: any) => { companyNames[c.id] = c.name; });
+
+            // Aproximado, informativo — no reemplaza el cálculo de nómina real
+            // de la otra sede (que agrupa por turno). Suficiente para avisar
+            // "tiene tiempo registrado en otra sede", no para pagar con esto.
+            const map: Record<string, { minutes: number; sedeMinutes: Record<string, number> }> = {};
+            otherEntries.forEach((e: any) => {
+                let minutes = 0;
+                if (e.total_hours) minutes = e.total_hours * 60;
+                else if (e.clock_in && e.clock_out) minutes = Math.max(0, (new Date(e.clock_out).getTime() - new Date(e.clock_in).getTime()) / 60000);
+                if (minutes === 0) return;
+                const key = `${e.profile_id}|${e.date}`;
+                if (!map[key]) map[key] = { minutes: 0, sedeMinutes: {} };
+                map[key].minutes += minutes;
+                map[key].sedeMinutes[e.company_id] = (map[key].sedeMinutes[e.company_id] || 0) + minutes;
+            });
+
+            const result: Record<string, OtherSedeInfo> = {};
+            Object.entries(map).forEach(([key, v]) => {
+                result[key] = {
+                    totalMinutes: v.minutes,
+                    bySede: Object.entries(v.sedeMinutes).map(([cid, min]) => ({ name: companyNames[cid] || 'Otra sede', minutes: min }))
+                };
+            });
+            setOtherSedeMap(result);
+        } catch (err) {
+            console.error('Error consultando horas en otras sedes:', err);
+            setOtherSedeMap({});
+        }
+    };
 
     const runReport = async () => {
         if (!companyId) return;
@@ -68,7 +149,8 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
         setError(null);
         try {
             const { data, error: rpcError } = await supabase.rpc('payroll_daily_breakdown', {
-                p_company_id: companyId, p_start_date: dateRange.start, p_end_date: dateRange.end
+                p_company_id: companyId, p_start_date: dateRange.start, p_end_date: dateRange.end,
+                p_profile_id: selectedProfileId === 'all' ? null : selectedProfileId
             });
             if (rpcError) throw rpcError;
             // Solo filas con algo que mostrar (evita una tabla enorme de días
@@ -79,6 +161,7 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
             );
             setRows(withData);
             setHasRun(true);
+            await fetchOtherSedeHours(Array.from(new Set(withData.map((r: any) => r.profile_id))));
         } catch (err: any) {
             console.error('Error generando el informe:', err);
             setError(err.message || 'Error desconocido al generar el informe.');
@@ -92,16 +175,21 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
         const headers = [
             'Empleado', 'Identificación', 'Fecha', 'Min. Trabajo', 'Desayuno (min)', 'Almuerzo (min)',
             'Pausa Activa (min)', 'Otros (min)', 'Ordinaria (min)', 'Extra Diurna (min)', 'Extra Nocturna (min)',
-            'Extra Dominical (min)', 'Tardanza (min)', 'Novedad', 'Ausencia Injustificada', 'Costo Estimado'
+            'Extra Dominical (min)', 'Tardanza (min)', 'Novedad', 'Ausencia Injustificada', 'Costo Estimado',
+            'Horas en Otra Sede (mismo día)'
         ];
-        const dataRows = rows.map(r => [
-            r.full_name, r.national_id, r.work_date, Math.round(r.minutes_work), Math.round(r.breakfast_minutes),
-            Math.round(r.lunch_minutes), Math.round(r.active_pause_minutes), Math.round(r.other_minutes),
-            Math.round(r.ordinary_minutes), Math.round(r.extra_day_minutes), Math.round(r.extra_night_minutes),
-            Math.round(r.extra_sunday_minutes), Math.round(r.late_minutes),
-            r.leave_type ? (LEAVE_TYPE_LABELS[r.leave_type] || r.leave_type) : '',
-            r.is_unjustified_absence ? 'Sí' : 'No', Math.round(r.cost)
-        ]);
+        const dataRows = rows.map(r => {
+            const otherSede = otherSedeMap[`${r.profile_id}|${r.work_date}`];
+            return [
+                r.full_name, r.national_id, r.work_date, Math.round(r.minutes_work), Math.round(r.breakfast_minutes),
+                Math.round(r.lunch_minutes), Math.round(r.active_pause_minutes), Math.round(r.other_minutes),
+                Math.round(r.ordinary_minutes), Math.round(r.extra_day_minutes), Math.round(r.extra_night_minutes),
+                Math.round(r.extra_sunday_minutes), Math.round(r.late_minutes),
+                r.leave_type ? (LEAVE_TYPE_LABELS[r.leave_type] || r.leave_type) : '',
+                r.is_unjustified_absence ? 'Sí' : 'No', Math.round(r.cost),
+                otherSede ? otherSede.bySede.map(s => `${s.name}: ${(s.minutes / 60).toFixed(1)}h`).join(' · ') : ''
+            ];
+        });
         const aoa = [
             [`Informe Detallado por Empleado/Día${companyName ? ' — ' + companyName : ''}`],
             [`Periodo: ${dateRange.start} a ${dateRange.end}`],
@@ -137,6 +225,15 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
                     <div>
                         <label className="text-xs font-bold uppercase text-muted-foreground block mb-1">Hasta</label>
                         <input type="date" value={dateRange.end} onChange={e => setDateRange(r => ({ ...r, end: e.target.value }))} className="border rounded-xl px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold uppercase text-muted-foreground block mb-1">Empleado</label>
+                        <select value={selectedProfileId} onChange={e => setSelectedProfileId(e.target.value)} className="border rounded-xl px-3 py-2 text-sm min-w-[200px]">
+                            <option value="all">Todos los empleados</option>
+                            {employees.map(emp => (
+                                <option key={emp.id} value={emp.id}>{emp.full_name} ({emp.national_id})</option>
+                            ))}
+                        </select>
                     </div>
                     <button
                         onClick={runReport}
@@ -188,9 +285,21 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((r, idx) => (
+                                    {rows.map((r, idx) => {
+                                        const otherSede = otherSedeMap[`${r.profile_id}|${r.work_date}`];
+                                        return (
                                         <tr key={`${r.profile_id}-${r.work_date}-${idx}`} className="border-t hover:bg-muted/20">
-                                            <td className="p-3 font-bold whitespace-nowrap">{r.full_name}</td>
+                                            <td className="p-3 font-bold whitespace-nowrap">
+                                                {r.full_name}
+                                                {otherSede && (
+                                                    <span
+                                                        title={otherSede.bySede.map(s => `${s.name}: ${(s.minutes / 60).toFixed(1)}h`).join(' · ')}
+                                                        className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-[9px] font-black uppercase align-middle cursor-help"
+                                                    >
+                                                        <MapPinned className="w-3 h-3" /> +{(otherSede.totalMinutes / 60).toFixed(1)}h otra sede
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td className="p-3 whitespace-nowrap">{r.work_date}</td>
                                             <td className="p-3 text-right">{fmtMin(r.minutes_work)}</td>
                                             <td className="p-3 text-right">{fmtMin(r.breakfast_minutes)}</td>
@@ -211,7 +320,8 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
                                             </td>
                                             <td className="p-3 text-right font-bold">${fmtCost(r.cost)}</td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
