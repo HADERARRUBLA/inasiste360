@@ -519,11 +519,67 @@ Antes de escribir el SQL se le pidió al usuario correr una consulta de introspe
 - **`frontend/src/App.tsx`**: nueva pestaña **"Nómina (Servidor) — Beta"**, visible solo para `superadmin`.
 
 ### Verificado
-`npx tsc --noEmit` limpio, app cargando sin errores de consola. **No se pudo probar el flujo autenticado** (sin credenciales) ni ejecutar el SQL contra datos reales. **Pendiente para el usuario:**
-1. Ejecutar `0010_payroll_period_rpc.sql` completo en Supabase SQL Editor (DEV) y confirmar `PAYROLL_RPC_SELFTEST: 42/42 VERIFICACIONES OK` en los resultados — si falla, la migración se revierte sola y no queda nada instalado.
-2. Entrar como superadmin → pestaña "Nómina (Servidor) — Beta", elegir una sede y rango de fechas con datos reales (ideal: DEMO-CLIENTES, que ya tiene 30 días de marcaciones variadas) y correr la comparación.
-3. Revisar el contador "X de Y campos no coinciden" y el detalle diario de cualquier fila en rojo.
-4. Repetir con un rango que incluya un empleado de horario abierto, uno personalizado, y días con domingos o ausencias, antes de considerar el cutover real (fuera de alcance de este cambio).
+`npx tsc --noEmit` limpio, app cargando sin errores de consola.
+
+### Actualización — validación en vivo completada con éxito (2026-08-10, 00:32 hora Colombia)
+La sesión anterior se cortó por límite de uso justo antes de dejar escrito este resultado, así que quedó registrado recién ahora. Secuencia real de esa noche, tras el cierre inicial de la Fase 4:
+
+1. **Bug encontrado en la primera comparación**: minutos inflados hasta 158x en algunos empleados. Causa: la ventana fija de ±2 días del RPC podía cortar un turno que empezaba antes del rango pedido. Corregido en [`0010_payroll_period_rpc.sql`](supabase/migrations/0010_payroll_period_rpc.sql) — commit `01c00b3`.
+2. **Segundo bug, en la siguiente comparación**: turnos gigantes mezclando marcaciones de días distintos. Causa real: el script de demo inserta todo en una sola transacción, así que `created_at` queda empatado en todas las filas; el RPC ordenaba por `created_at` (igual que el navegador) y el desempate por `id` revolvía el orden real. Corregido ordenando por `clock_in` en vez de `created_at` en las 3 CTEs que arman turnos — commit `3af72d9`. También se corrigió el script de demo para fijar `created_at = clock_in` en cada insert.
+3. **Tercer bug, encontrado al investigar por qué algunos empleados seguían en cero**: `AdminDashboard.tsx` traía `InA_time_entries` sin paginar, y Supabase/PostgREST corta cada consulta en 1000 filas por defecto. DEMO-CLIENTES tiene 2275 marcaciones — cualquier sede por encima de 1000 registros venía perdiendo empleados enteros con horas en cero, **sin ningún error visible en el dashboard real que ya usan los clientes** (no solo en el panel de comparación). Corregido con `fetchAllRows()` (paginación con `.range()`, desempate por `id`) en `AdminDashboard.tsx` y `PayrollRpcShadowPanel.tsx` — commit `652fe33`.
+4. **Comparación final, con los 3 bugs corregidos**: `0 de 144 campos no coinciden` — coincidencia perfecta entre el cálculo del navegador y el RPC del servidor.
+
+**Conclusión:** el modo sombra cumplió su propósito — atrapó 2 bugs reales del RPC nuevo antes de tocar producción, y de paso destapó un tercer bug preexistente en el dashboard real (pérdida silenciosa de datos por el límite de 1000 filas), ya corregido también. La validación que quedaba pendiente en la sección anterior **ya está completa y en verde**.
+
+### Segunda ronda de validación (2026-08-19) — cerrada con éxito
+Al retomar el proyecto se corrió la comparación de nuevo, ampliando el rango a 13/07–19/08/2026 (~5 semanas, cubre domingos y el estado real de todos los perfiles de la sede, no solo los de las autopruebas). Resultado inicial: **1 de 144 campos no coincide** — `Eliana`, columna Desayuno (1229 vs 1236 min).
+
+**Causa identificada (no es un bug):** ambos lados —cliente y RPC— usan "ahora" como fin de cualquier marcación de **hoy** que siga sin `clock_out` (cliente: `new Date()` en `PayrollRpcShadowPanel.tsx:118`; servidor: `now()` en `0010_payroll_period_rpc.sql:344`). Eliana tenía una pausa de desayuno abierta al momento de la prueba; como las dos consultas (navegador y RPC) no corren en el mismo instante exacto, cada una capturó un "ahora" distinto — de ahí los 7 minutos. Es un artefacto esperable de cualquier comparación que incluya el día de hoy con una marcación en curso, no un defecto de cálculo.
+
+**Confirmado:** se repitió la comparación con `Hasta = 18/08/2026` (ayer, sin ningún turno en curso) → **0 de 144 campos no coinciden**, coincidencia perfecta, incluyendo el caso de Eliana con horas extra diurna real (20/20) en el rango.
+
+**Estado: validación del RPC de nómina completamente cerrada.** El servidor y el navegador calculan idéntico sobre datos cerrados, en un rango de 5+ semanas con domingos y extras reales. Lo único que sigue pendiente de definición es el **cutover** (que el dashboard pase a usar el RPC en vez de calcular en el navegador) — decisión de negocio, no de validación técnica; hoy el dashboard real sigue calculando 100% client-side, el RPC solo se usa desde el panel Beta.
+
+**Nota aparte encontrada en esta ronda (no evaluada aún):** `CAROLINA MAZO` muestra Costo `0/0` pese a tener 11625 min ordinarios — ambos lados coinciden en 0, así que no es una divergencia RPC-vs-navegador, pero sugiere que a ese perfil le falta `hourly_rate_base` configurado en su ficha. Vale la pena revisarlo en `EmployeeManagement.tsx` antes de dar por buena su nómina.
+
+---
+
+## 20. Separación DEV/PROD: esquema base clonado a una instancia Supabase nueva (2026-08-19)
+
+Retomando el hallazgo de la sección 11 (Producción y "DEV" compartían el mismo proyecto Supabase, con datos de un cliente real —Alimentos Foodper— mezclados con `DEMO-CLIENTES`), el usuario consiguió una segunda instancia Supabase para separar de verdad Producción de pruebas, pensada para el cliente real que está por entrar con datos reales.
+
+**Problema real:** ninguna migración del repo contiene el `CREATE TABLE` original de `InA_organizations`/`InA_companies`/`InA_profiles`/`InA_time_entries`/`InA_admin_branches` — son anteriores al historial de migraciones. Sin acceso de escritura a ninguna base de datos, y sin Docker disponible para `supabase db dump` (falló: `failed to connect to the docker API`), se reconstruyó el esquema exacto de esas 5 tablas vía 3 consultas de solo lectura (`information_schema.columns`, `information_schema.table_constraints`, `pg_indexes`) que el usuario corrió y compartió.
+
+**Resultado:** [`supabase/migrations/0000_base_schema_reconstructed.sql`](supabase/migrations/0000_base_schema_reconstructed.sql) — nuevo, primero en el orden de migraciones. Verificado columna por columna contra los 3 resultados de introspección (tipos, defaults, `NOT NULL`, FKs con su `ON DELETE` exacto — incluyendo que `InA_time_entries.company_id` **no tiene FK** en la base real, preservado a propósito — y los 2 `CHECK` con nombres originales).
+
+**Hallazgo real durante el bootstrap:** correr `0004_open_schedule.sql` tal cual sobre la instancia nueva falla (`column "use_custom_schedule" does not exist`). Causa: `0000` se construyó introspectando el estado **actual** de la base real (ya migrada), que nunca tuvo esa columna porque ya fue eliminada en su momento por la propia `0004` — al arrancar ya con el esquema final, la migración no tiene nada legado que transformar. Es la única migración del repo con patrón "agregar columna + copiar de una columna vieja + borrarla", así que es la única con este problema. **Solución: saltar `0004` por completo al bootstrapear una instancia nueva** — ya documentado en el encabezado de `0000_base_schema_reconstructed.sql`.
+
+**Estado confirmado (2026-08-19):** las 5 tablas base + `0001` a `0003` y `0005` a `0010` corrieron sin errores en la instancia nueva — políticas RLS verificadas por tabla (`pg_policies`) y `PAYROLL_RPC_SELFTEST` en verde. El esquema completo de la instancia nueva ya coincide con producción actual.
+
+**Pendiente para dejarla operando como Producción real:**
+1. Recrear a mano los usuarios de Supabase Auth (superadmin al menos) en la instancia nueva — no viajan con el esquema.
+2. Crear ahí la organización/sede/admin del cliente real que va a entrar (no correr `demo_clientes_seed.sql`, esa instancia es Producción real).
+3. Actualizar en Vercel las variables de entorno de la rama `master` (Producción) para que `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` apunten a la instancia nueva.
+4. Probar login + Kiosko + dashboard de punta a punta contra la instancia nueva antes de considerar al cliente "en vivo".
+5. La instancia vieja (con `DEMO-CLIENTES` y los datos de Alimentos Foodper) queda como DEV/pruebas real de aquí en adelante.
+
+### Ejecutado (2026-08-19/20): cutover real de Producción en Vercel
+El usuario ejecutó los pasos 1-4: creó el superadmin en la instancia nueva (con "Create new user" en vez de invitación por correo, para no depender del envío de emails — el plan gratis tiene un límite muy bajo, ya se había agotado una vez en la sesión del 8 de agosto y volvió a agotarse aquí), y separó las variables `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` en Vercel por entorno (antes eran "All Environments", una sola instancia para Preview y Production a la vez — causa raíz confirmada de por qué compartían base de datos desde el inicio): ahora **Production** apunta a la instancia nueva y **Preview** se queda con la vieja. Redeploy de `master` confirmado, login funcionando en `https://in.asiste360.com` (dominio real de producción) contra la instancia nueva, ya vacía de datos de demo.
+
+**Nota operativa:** igual que con la instancia vieja, hubo que configurar `Authentication → URL Configuration` (Site URL = `https://in.asiste360.com`, Redirect URL = `https://in.asiste360.com/**`) y fijar la contraseña del superadmin directo por SQL (`crypt(...)`, mismo patrón de la sección 11) porque el correo de recuperación volvió a chocar con el límite de envíos del plan gratis.
+
+### Bug real encontrado al probar: crear un admin nuevo no generaba cuenta de Auth
+Al intentar crear el primer administrador del cliente real desde el panel (`AdminManagement.tsx`), el usuario podía "guardarlo" pero no podía loguearse — "contraseña inválida" siempre. Causa: ese formulario nunca se actualizó cuando se migró el login del panel a Supabase Auth (sección 11, 8 de agosto) — seguía solo insertando una fila en `InA_profiles` con un PIN, sin crear la cuenta real de Auth ni vincular `auth_user_id`. Nadie lo había notado porque, desde esa migración, no se había creado ningún admin nuevo por la interfaz — los 3 existentes se arreglaron a mano por SQL/Dashboard.
+
+**Corregido** en `AdminManagement.tsx`:
+- Al crear un admin nuevo, ahora llama `supabase.auth.signUp()` con un **cliente Supabase aislado** (`persistSession: false`) creado solo para esto — evita que el `signUp` pise la sesión activa del superadmin que está creando el admin en el mismo navegador (gotcha conocido del SDK de Supabase: `signUp` puede reemplazar la sesión actual del cliente que lo ejecuta).
+- El `auth_user_id` resultante se guarda en el mismo `upsert` de `InA_profiles`.
+- Se quitó el campo "PIN" del formulario (guardaba la clave real en texto plano en `InA_profiles.pin_code` — no debería pasar con la contraseña de un admin). La contraseña ahora solo se usa una vez para `signUp` y nunca se persiste en una tabla propia.
+- El identificador pasó a ser explícitamente "Correo Electrónico" (requerido, valida formato `@`), bloqueado al editar un admin existente.
+
+**Requiere** desactivar "Confirm email" en `Authentication → Providers → Email` de la instancia de Producción — si no, `signUp()` intenta mandar un correo de confirmación y choca con el mismo límite de envíos ya mencionado, dejando la cuenta creada pero sin poder loguearse hasta confirmar.
+
+Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo por el usuario:** crear un admin real desde el panel de Producción y confirmar que puede loguearse con la contraseña mostrada al guardar.
 
 ---
 
