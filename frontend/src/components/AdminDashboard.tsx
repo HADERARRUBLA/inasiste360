@@ -12,7 +12,7 @@ import {
     Tooltip, ResponsiveContainer
 } from 'recharts';
 import { showToast } from '../lib/toastStore';
-import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes } from '../utils/calculations';
+import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes, splitSundayMinutes } from '../utils/calculations';
 import { fetchAllRows } from '../utils/supabasePagination';
 
 interface AdminDashboardProps {
@@ -339,29 +339,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 totalMinutesWork += diffMin;
 
                 // --- Calculate Smart Cost & Extras ---
-                const buckets = classifyShiftMinutes(start, end, {
-                    nightShiftStartTime: company?.night_shift_start_time || '21:00',
-                    daySchedule: profileSched,
-                    scheduleMode,
-                    openNoOvertime: profile.open_no_overtime,
-                    openMaxOrdinaryMinutes: profile.open_max_ordinary_minutes,
-                    firstInTime
-                });
-
-                const baseRate = isSunday ? (profile.hourly_rate_sunday_holiday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
-
-                const cost = (buckets.ordinary * baseRate / 60) +
-                             (buckets.extraDay * (profile.hourly_rate_extra_day || baseRate || 0) / 60) +
-                             (buckets.extraNight * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
+                let cost = 0;
+                if (isSunday) {
+                    // Domingo/festivo: todo el bloque es dominical, sin pivote
+                    // ordinaria/extra — solo diurno/nocturno, cada uno con su
+                    // propia tarifa (confirmado con el usuario 2026-08-20).
+                    const sunday = splitSundayMinutes(start, end, company?.night_shift_start_time || '21:00');
+                    const dayRate = profile.hourly_rate_sunday_holiday || profile.hourly_rate_base || 0;
+                    const nightRate = profile.hourly_rate_sunday_holiday_extra_night || dayRate;
+                    cost = (sunday.day * dayRate / 60) + (sunday.night * nightRate / 60);
+                } else {
+                    const buckets = classifyShiftMinutes(start, end, {
+                        nightShiftStartTime: company?.night_shift_start_time || '21:00',
+                        daySchedule: profileSched,
+                        scheduleMode,
+                        openNoOvertime: profile.open_no_overtime,
+                        openMaxOrdinaryMinutes: profile.open_max_ordinary_minutes,
+                        firstInTime
+                    });
+                    const baseRate = profile.hourly_rate_base || 0;
+                    cost = (buckets.ordinary * baseRate / 60) +
+                           (buckets.extraDay * (profile.hourly_rate_extra_day || baseRate || 0) / 60) +
+                           (buckets.extraNight * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
+                    userSummaries[profileId].extraDay += buckets.extraDay;
+                    userSummaries[profileId].extraNight += buckets.extraNight;
+                }
 
                 estimatedCost += cost;
                 userSummaries[profileId].totalCost += cost;
 
                 if (isSunday) {
                     userSummaries[profileId].extraSunday += diffMin;
-                } else {
-                    userSummaries[profileId].extraDay += buckets.extraDay;
-                    userSummaries[profileId].extraNight += buckets.extraNight;
                 }
             }
         });
@@ -434,7 +442,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             .filter(g => g.dateKey >= dateRange.start && g.dateKey <= dateRange.end);
 
         shiftGroupsForExport.forEach(group => {
-            let dOrd = 0, dExtD = 0, dExtN = 0, dDom = 0;
+            let dOrd = 0, dExtD = 0, dExtN = 0, dDomDia = 0, dDomNoche = 0;
             const { profileId, dateKey: dateStr, entries: sorted } = group;
             const profile = profiles.find(p => p.id === profileId);
             if (!profile) return;
@@ -451,10 +459,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
                 const start = new Date(e.clock_in || e.created_at!);
                 const next = sorted[idx + 1];
                 const end = next ? new Date(next.clock_in || next.created_at!) : (dateStr === new Date().toLocaleDateString('en-CA') ? new Date() : start);
-                const diff = (end.getTime() - start.getTime()) / 60000;
 
                 if (isSunday) {
-                    dDom += diff;
+                    // Domingo/festivo: sin pivote ordinaria/extra, solo diurno/nocturno
+                    // (mismo criterio que el useMemo principal, confirmado 2026-08-20).
+                    const sunday = splitSundayMinutes(start, end, company?.night_shift_start_time || '21:00');
+                    dDomDia += sunday.day;
+                    dDomNoche += sunday.night;
                 } else {
                     const buckets = classifyShiftMinutes(start, end, {
                         nightShiftStartTime: company?.night_shift_start_time || '21:00',
@@ -473,7 +484,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
             if (dOrd > 0) rows.push([profile.national_id, dateStr, '1', (dOrd / 60).toFixed(2), 'HE Ordinarias']);
             if (dExtD > 0) rows.push([profile.national_id, dateStr, '2', (dExtD / 60).toFixed(2), 'HE Diurnas']);
             if (dExtN > 0) rows.push([profile.national_id, dateStr, '3', (dExtN / 60).toFixed(2), 'HE Nocturnas']);
-            if (dDom > 0) rows.push([profile.national_id, dateStr, '4', (dDom / 60).toFixed(2), 'Recargo Dominical']);
+            if (dDomDia > 0) rows.push([profile.national_id, dateStr, '4', (dDomDia / 60).toFixed(2), 'Recargo Dominical Diurno']);
+            if (dDomNoche > 0) rows.push([profile.national_id, dateStr, '5', (dDomNoche / 60).toFixed(2), 'Recargo Dominical Nocturno']);
         });
 
         const csvContent = rows.map(r => r.map((cell: any) => `"${cell}"`).join(',')).join('\n');

@@ -579,7 +579,39 @@ Al intentar crear el primer administrador del cliente real desde el panel (`Admi
 
 **Requiere** desactivar "Confirm email" en `Authentication → Providers → Email` de la instancia de Producción — si no, `signUp()` intenta mandar un correo de confirmación y choca con el mismo límite de envíos ya mencionado, dejando la cuenta creada pero sin poder loguearse hasta confirmar.
 
-Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo por el usuario:** crear un admin real desde el panel de Producción y confirmar que puede loguearse con la contraseña mostrada al guardar.
+**Segundo bug encontrado al probar, mismo día:** al abrir "Registrar Admin" después de haber usado "Editar" antes (aunque se cerrara sin guardar), `formData.id` quedaba con el id del admin anterior — el formulario se comportaba como una edición (sin pedir contraseña, sin `signUp()`). Corregido: tanto "Registrar Admin" como el botón de cerrar (X) ahora resetean `formData` por completo antes de abrir.
+
+**Verificado en vivo por el usuario (2026-08-20):** creación de admin + login confirmados funcionando de punta a punta, tanto en la instancia de pruebas como en Producción (`in.asiste360.com`).
+
+---
+
+## 21. Fix de nómina dominical + adjuntos de soportes en Novedades (2026-08-20)
+
+Con el onboarding del cliente real en marcha (el usuario avanza por su cuenta creando organización/sedes/empleados en `in.asiste360.com`), se retomó la deuda pendiente confirmada en la ronda anterior.
+
+### Bug real de plata encontrado: tarifas de extra dominical configurables pero nunca usadas
+Al revisar el pedido de "corregir el domingo" (originalmente descrito como un tema de reporte/visualización), se encontró algo más serio: `InA_profiles` tiene columnas `hourly_rate_sunday_holiday_extra_day`/`hourly_rate_sunday_holiday_extra_night` ("Extra Dom Diurna"/"Extra Dom Nocturna"), configurables por empleado en `EmployeeManagement.tsx`, pero **ningún cálculo del sistema las usaba jamás** — ni el dashboard, ni la exportación ICG/Excel, ni el RPC del servidor. Cualquier hora "extra" trabajada en domingo (más allá del horario ordinario) se pagaba con la tarifa de extra de un día normal de semana, ignorando la tarifa dominical especial configurada.
+
+**Regla de negocio confirmada con el usuario (2026-08-20):** el domingo no tiene distinción ordinaria/extra — **todo** el bloque trabajado se paga como dominical, la única separación es diurno/nocturno, cada franja con su propia tarifa.
+
+**Corregido:**
+- **`frontend/src/utils/calculations.ts`**: nueva función `splitSundayMinutes()` — reparte un bloque de tiempo en diurno/nocturno según `night_shift_start_time`, sin ningún pivote ordinaria/extra (a diferencia de `classifyShiftMinutes`, que sí lo tiene y sigue usándose tal cual para días de semana).
+- **`AdminDashboard.tsx`** (cálculo principal de `stats` y `exportToICG`): el domingo ahora calcula costo como `diurno × hourly_rate_sunday_holiday + nocturno × hourly_rate_sunday_holiday_extra_night` — ya usa la tarifa que el admin configura, no la de extra de semana. El total mostrado en pantalla/Excel (`extraSunday`, columna "Extra Dominical") sigue siendo la suma diurno+nocturno, sin cambio de formato — el fix es de tarifa, no de presentación en esas dos vistas.
+- **`exportToICG`**: antes no separaba domingo en absoluto (`Recargo Dominical` como un solo concepto sin distinguir franja horaria). Ahora emite 2 conceptos separados: `Recargo Dominical Diurno` (código `4`) y `Recargo Dominical Nocturno` (código nuevo `5`). **⚠️ Pendiente de confirmar con el usuario:** los códigos de concepto (`1`-`5`) son arbitrarios de este export, no verificados contra el mapeo real que espera su sistema ICG — antes de la primera exportación real a ICG con esta columna nueva, confirmar que el código `5` no choca con algo ya configurado del lado de ICG.
+- **`PayrollRpcShadowPanel.tsx`**: actualizado con el mismo criterio, para seguir siendo un espejo fiel del cálculo real del navegador.
+- **No se tocó** `supabase/migrations/0010_payroll_period_rpc.sql` (el RPC del servidor) — sigue con la lógica vieja (ordinaria/extra también en domingo, tarifas de semana). Como el RPC no está en producción (dashboard sigue calculando client-side, RPC solo se usa desde el panel Beta), esto no afecta la nómina real del cliente hoy, pero si se retoma la validación del panel "Nómina (Servidor) — Beta" con datos de domingo, va a mostrar diferencias hasta que el RPC se actualice con el mismo criterio — **deuda pendiente, anotada aquí para no perderla**.
+
+Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo:** un turno de domingo con horas suficientes para ver el diurno/nocturno separado en la exportación ICG, y confirmar que el costo en el dashboard usa la tarifa dominical configurada (no la de semana).
+
+### Adjuntos en Novedades (conecta `attachment_url`, pendiente desde la Fase 3)
+`InA_leave_requests.attachment_url` existía desde la migración `0005` pero nunca se conectó a Storage — sin forma de subir el soporte de una incapacidad/permiso desde la interfaz.
+
+**Implementado** en `LeaveManagement.tsx`, reutilizando el bucket privado `employee-documents` ya creado en la Fase 5 (mismo patrón de `EmployeeHrFolder.tsx`: subir con `{organization_id}/{profile_id}/{timestamp}-{archivo}`, ver con `createSignedUrl`, borrar con `.remove()`):
+- Sección "Soporte (opcional)" en el formulario de crear/editar novedad — solo se activa si ya se eligió el colaborador (necesario para la ruta de Storage). Permite adjuntar y quitar antes de guardar.
+- Botón nuevo en la tabla (ícono de descarga) que aparece solo en filas con adjunto, genera la URL firmada y la abre.
+- `organizationId` se resuelve dentro del propio componente (consulta a `InA_companies` por `company_id`, igual patrón que `EmployeeManagement.tsx`) — no se agregó como prop nueva en `App.tsx`.
+
+Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo:** adjuntar un soporte al crear una novedad, confirmar que "Ver soporte" abre el archivo, y que "Quitar" antes de guardar borra el objeto de Storage sin dejar huérfanos.
 
 ---
 

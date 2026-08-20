@@ -124,3 +124,36 @@ export function classifyShiftMinutes(start: Date, end: Date, ctx: DayCalcContext
 
     return { ordinary, extraDay, extraNight };
 }
+
+export interface SundayMinutes {
+    day: number;
+    night: number;
+}
+
+/**
+ * Domingo/festivo: todo el bloque se paga como dominical, sin distinción
+ * ordinaria/extra (confirmado con el usuario 2026-08-20) — la única
+ * separación es diurno/nocturno según night_shift_start_time. No usa
+ * classifyShiftMinutes porque ese pivote ordinaria/extra no aplica aquí.
+ */
+export function splitSundayMinutes(start: Date, end: Date, nightShiftStartTime: string): SundayMinutes {
+    const totalMin = Math.max(0, (end.getTime() - start.getTime()) / 60000);
+    if (totalMin === 0) return { day: 0, night: 0 };
+
+    const nightThreshold = clockTimeOn(start, nightShiftStartTime || '21:00');
+
+    const getOverlap = (t1: Date, t2: Date) => {
+        const os = Math.max(start.getTime(), t1.getTime());
+        const oe = Math.min(end.getTime(), t2.getTime());
+        return Math.max(0, (oe - os) / 60000);
+    };
+
+    const day = getOverlap(new Date(start.getTime() - 86400000), nightThreshold);
+    let night = getOverlap(nightThreshold, new Date(nightThreshold.getTime() + 86400000));
+
+    // Misma salvaguarda que classifyShiftMinutes para turnos muy largos.
+    const accounted = day + night;
+    if (accounted < totalMin - 0.01) night += (totalMin - accounted);
+
+    return { day, night };
+}

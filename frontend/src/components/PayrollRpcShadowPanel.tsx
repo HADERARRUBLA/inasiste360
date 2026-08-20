@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
-import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes } from '../utils/calculations';
+import { groupEntriesIntoShifts, getFirstInTime, classifyShiftMinutes, splitSundayMinutes } from '../utils/calculations';
 import { fetchAllRows } from '../utils/supabasePagination';
 
 interface PayrollRpcShadowPanelProps {
@@ -129,24 +129,27 @@ function computeClientDaily(
 
             row.minutes_work += diffMin;
 
-            const buckets = classifyShiftMinutes(start, end, {
-                nightShiftStartTime: company?.night_shift_start_time || '21:00',
-                daySchedule: profileSched,
-                scheduleMode,
-                openNoOvertime: profile.open_no_overtime,
-                openMaxOrdinaryMinutes: profile.open_max_ordinary_minutes,
-                firstInTime
-            });
-
-            const baseRate = isSunday ? (profile.hourly_rate_sunday_holiday || profile.hourly_rate_base || 0) : (profile.hourly_rate_base || 0);
-            const cost = (buckets.ordinary * baseRate / 60) +
-                (buckets.extraDay * (profile.hourly_rate_extra_day || baseRate || 0) / 60) +
-                (buckets.extraNight * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
-            row.cost += cost;
-
             if (isSunday) {
+                // Domingo/festivo: sin pivote ordinaria/extra, solo diurno/nocturno
+                // (mismo criterio que AdminDashboard.tsx, confirmado 2026-08-20).
+                const sunday = splitSundayMinutes(start, end, company?.night_shift_start_time || '21:00');
+                const dayRate = profile.hourly_rate_sunday_holiday || profile.hourly_rate_base || 0;
+                const nightRate = profile.hourly_rate_sunday_holiday_extra_night || dayRate;
+                row.cost += (sunday.day * dayRate / 60) + (sunday.night * nightRate / 60);
                 row.extra_sunday_minutes += diffMin;
             } else {
+                const buckets = classifyShiftMinutes(start, end, {
+                    nightShiftStartTime: company?.night_shift_start_time || '21:00',
+                    daySchedule: profileSched,
+                    scheduleMode,
+                    openNoOvertime: profile.open_no_overtime,
+                    openMaxOrdinaryMinutes: profile.open_max_ordinary_minutes,
+                    firstInTime
+                });
+                const baseRate = profile.hourly_rate_base || 0;
+                row.cost += (buckets.ordinary * baseRate / 60) +
+                    (buckets.extraDay * (profile.hourly_rate_extra_day || baseRate || 0) / 60) +
+                    (buckets.extraNight * (profile.hourly_rate_extra_night || baseRate || 0) / 60);
                 row.ordinary_minutes += buckets.ordinary;
                 row.extra_day_minutes += buckets.extraDay;
                 row.extra_night_minutes += buckets.extraNight;
