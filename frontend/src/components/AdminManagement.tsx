@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { UserPlus, ShieldCheck, Mail, Building2, X, Save, ShieldAlert, Key, MapPin } from 'lucide-react';
 import type { UserRole, Company } from '../types';
 import { showToast } from '../lib/toastStore';
+
+// Cliente aislado (sin persistir sesión) usado únicamente para crear la
+// cuenta de Supabase Auth de un admin nuevo, sin pisar la sesión activa del
+// superadmin que está haciendo la creación en este mismo navegador.
+const adminCreationClient = createClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+);
 
 export const AdminManagement: React.FC = () => {
     const [admins, setAdmins] = useState<any[]>([]);
@@ -19,7 +29,7 @@ export const AdminManagement: React.FC = () => {
         company_id: '',
         organization_id: '',
         role: 'admin' as UserRole,
-        pin_code: '',
+        password: '', // solo para crear la cuenta de Auth, nunca se guarda en InA_profiles
         managed_branches: [] as string[]
     });
 
@@ -72,7 +82,7 @@ export const AdminManagement: React.FC = () => {
             company_id: admin.company_id || '',
             organization_id: admin.organization_id || '',
             role: admin.role,
-            pin_code: admin.pin_code || '',
+            password: '',
             managed_branches: admin.assigned_branches?.map((b: any) => b.branch_id) || []
         });
         setIsAdding(true);
@@ -82,17 +92,42 @@ export const AdminManagement: React.FC = () => {
         e.preventDefault();
         setStatus(null);
         try {
-            const { managed_branches, ...profileData } = formData;
-            
-            const dataToSave = {
+            const isNewAdmin = !formData.id;
+            const email = formData.national_id.trim();
+
+            let authUserId: string | undefined;
+            if (isNewAdmin) {
+                if (!email.includes('@')) {
+                    throw new Error('Para crear un administrador, el identificador debe ser un correo electrónico válido (se usa para iniciar sesión).');
+                }
+                if (formData.password.length < 6) {
+                    throw new Error('La contraseña inicial debe tener al menos 6 caracteres.');
+                }
+                // Cuenta real de Supabase Auth (login del panel usa signInWithPassword,
+                // no PIN) — se crea con un cliente aislado para no pisar la sesión
+                // del superadmin que está creando este admin.
+                const { data: signUpData, error: signUpError } = await adminCreationClient.auth.signUp({
+                    email,
+                    password: formData.password
+                });
+                if (signUpError) throw signUpError;
+                if (!signUpData.user) throw new Error('No se pudo crear la cuenta de acceso (Auth).');
+                authUserId = signUpData.user.id;
+                await adminCreationClient.auth.signOut();
+            }
+
+            const { managed_branches, password: _password, ...profileData } = formData;
+
+            const dataToSave: Record<string, any> = {
                 ...profileData,
-                national_id: profileData.national_id.trim(),
+                national_id: email,
                 company_id: profileData.company_id || null,
                 organization_id: profileData.organization_id || null
             };
+            if (authUserId) dataToSave.auth_user_id = authUserId;
 
             // Remove id if it's empty to allow new insert if not found by national_id
-            if (!dataToSave.id) delete (dataToSave as any).id;
+            if (!dataToSave.id) delete dataToSave.id;
 
             const { data: savedProfile, error } = await supabase
                 .from('InA_profiles')
@@ -123,16 +158,21 @@ export const AdminManagement: React.FC = () => {
                 }
             }
 
-            setStatus({ type: 'success', msg: 'Administrador guardado con éxito.' });
+            setStatus({
+                type: 'success',
+                msg: isNewAdmin
+                    ? `Administrador creado. Comparte estas credenciales de forma segura: ${email} / ${formData.password}`
+                    : 'Administrador guardado con éxito.'
+            });
             setIsAdding(false);
-            setFormData({ 
-                id: '', 
-                full_name: '', 
-                national_id: '', 
-                company_id: '', 
-                organization_id: '', 
-                role: 'admin', 
-                pin_code: '',
+            setFormData({
+                id: '',
+                full_name: '',
+                national_id: '',
+                company_id: '',
+                organization_id: '',
+                role: 'admin',
+                password: '',
                 managed_branches: []
             });
             fetchData();
@@ -213,29 +253,38 @@ export const AdminManagement: React.FC = () => {
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
-                                    <Mail className="w-3 h-3" /> Identificador (Email o Cédula)
+                                    <Mail className="w-3 h-3" /> Correo Electrónico (usuario de acceso)
                                 </label>
                                 <input
                                     required
+                                    type="email"
+                                    disabled={!!formData.id}
                                     value={formData.national_id}
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, national_id: e.target.value })}
-                                    className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
-                                    placeholder="Usuario (Cédula/Email)"
+                                    className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold disabled:opacity-60"
+                                    placeholder="admin@empresa.com"
                                 />
+                                {!!formData.id && (
+                                    <p className="text-[10px] text-muted-foreground font-bold ml-1">El correo no se puede cambiar aquí una vez creada la cuenta.</p>
+                                )}
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
-                                    <Key className="w-3 h-3" /> Clave de Acceso (PIN)
-                                </label>
-                                <input
-                                    required
-                                    value={formData.pin_code}
-                                    onChange={e => setFormData({ ...formData, pin_code: e.target.value })}
-                                    className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold tracking-[0.3em]"
-                                    placeholder="••••"
-                                    maxLength={8}
-                                />
-                            </div>
+                            {!formData.id && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest flex items-center gap-2 ml-1">
+                                        <Key className="w-3 h-3" /> Contraseña Inicial
+                                    </label>
+                                    <input
+                                        required
+                                        type="text"
+                                        minLength={6}
+                                        value={formData.password}
+                                        onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                        className="w-full px-5 py-4 border-2 border-muted bg-background rounded-2xl focus:border-primary outline-none transition-all font-bold"
+                                        placeholder="Mínimo 6 caracteres"
+                                    />
+                                    <p className="text-[10px] text-muted-foreground font-bold ml-1">Se la compartes tú directamente al admin — no se envía por correo.</p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-6">
