@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { LeaveRequest, LeaveType } from '../types';
-import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle, AlertCircle, Pencil, History } from 'lucide-react';
+import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle, AlertCircle, Pencil, History, Paperclip, Upload, Download } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
+
+const LEAVE_ATTACHMENTS_BUCKET = 'employee-documents';
 
 interface LeaveManagementProps {
     companyId: string | null;
@@ -40,13 +42,18 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
     const [historyFor, setHistoryFor] = useState<any | null>(null);
     const [historyEntries, setHistoryEntries] = useState<any[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [organizationId, setOrganizationId] = useState<string | null>(null);
+    const [uploadingAttachment, setUploadingAttachment] = useState(false);
+    const attachmentInputRef = useRef<HTMLInputElement>(null);
 
     const [formData, setFormData] = useState({
         profile_id: '',
         type: 'vacaciones' as LeaveType,
         start_date: '',
         end_date: '',
-        notes: ''
+        notes: '',
+        attachment_url: '' as string | null,
+        attachment_file_name: ''
     });
 
     useEffect(() => {
@@ -57,6 +64,9 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
         if (!companyId) { setLoading(false); onPendingCountChange?.(0); return; }
         setLoading(true);
         try {
+            const { data: comp } = await supabase.from('InA_companies').select('organization_id').eq('id', companyId).single();
+            setOrganizationId(comp?.organization_id || null);
+
             // Las 3 consultas son independientes entre sí (la de novedades no
             // depende de la lista de empleados, se filtra después en memoria)
             // — lanzarlas en paralelo evita sumar la latencia de cada una.
@@ -99,6 +109,63 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
         r.InA_profiles?.national_id?.includes(searchTerm)
     );
 
+    const blankLeaveForm = {
+        profile_id: '',
+        type: 'vacaciones' as LeaveType,
+        start_date: '',
+        end_date: '',
+        notes: '',
+        attachment_url: '' as string | null,
+        attachment_file_name: ''
+    };
+
+    const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!formData.profile_id) {
+            showToast('Selecciona primero el colaborador.', 'error');
+            if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+            return;
+        }
+        if (!organizationId) {
+            showToast('No se pudo determinar la organización de la sede.', 'error');
+            return;
+        }
+        setUploadingAttachment(true);
+        try {
+            const path = `${organizationId}/${formData.profile_id}/${Date.now()}-${file.name}`;
+            const { error } = await supabase.storage.from(LEAVE_ATTACHMENTS_BUCKET).upload(path, file);
+            if (error) throw error;
+            setFormData(f => ({ ...f, attachment_url: path, attachment_file_name: file.name }));
+            showToast('Soporte adjuntado.', 'success');
+        } catch (err: any) {
+            showToast('Error al subir el soporte: ' + err.message, 'error');
+        } finally {
+            setUploadingAttachment(false);
+            if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+        }
+    };
+
+    const handleRemoveAttachment = async () => {
+        if (!formData.attachment_url) return;
+        try {
+            await supabase.storage.from(LEAVE_ATTACHMENTS_BUCKET).remove([formData.attachment_url]);
+        } catch (err: any) {
+            console.error('Error borrando el soporte del storage:', err);
+        }
+        setFormData(f => ({ ...f, attachment_url: '', attachment_file_name: '' }));
+    };
+
+    const handleViewAttachment = async (path: string) => {
+        try {
+            const { data, error } = await supabase.storage.from(LEAVE_ATTACHMENTS_BUCKET).createSignedUrl(path, 3600);
+            if (error) throw error;
+            window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+        } catch (err: any) {
+            showToast('Error generando el enlace del soporte: ' + err.message, 'error');
+        }
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.profile_id || !formData.start_date || !formData.end_date) {
@@ -120,7 +187,8 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                         type: formData.type,
                         start_date: formData.start_date,
                         end_date: formData.end_date,
-                        notes: formData.notes || null
+                        notes: formData.notes || null,
+                        attachment_url: formData.attachment_url || null
                     })
                     .eq('id', editingId);
                 if (error) throw error;
@@ -133,6 +201,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                     end_date: formData.end_date,
                     status: 'approved',
                     notes: formData.notes || null,
+                    attachment_url: formData.attachment_url || null,
                     requested_by: currentProfileId,
                     approved_by: currentProfileId
                 }]);
@@ -141,7 +210,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
             }
             setIsAdding(false);
             setEditingId(null);
-            setFormData({ profile_id: '', type: 'vacaciones', start_date: '', end_date: '', notes: '' });
+            setFormData(blankLeaveForm);
             fetchData();
         } catch (err: any) {
             console.error('Error al guardar novedad:', err);
@@ -155,7 +224,9 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
             type: req.type,
             start_date: req.start_date,
             end_date: req.end_date,
-            notes: req.notes || ''
+            notes: req.notes || '',
+            attachment_url: req.attachment_url || '',
+            attachment_file_name: req.attachment_url ? req.attachment_url.split('/').pop().replace(/^\d+-/, '') : ''
         });
         setEditingId(req.id);
         setIsAdding(true);
@@ -266,7 +337,7 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                             if (isAdding) {
                                 setIsAdding(false);
                                 setEditingId(null);
-                                setFormData({ profile_id: '', type: 'vacaciones', start_date: '', end_date: '', notes: '' });
+                                setFormData(blankLeaveForm);
                             } else {
                                 setIsAdding(true);
                             }
@@ -425,6 +496,29 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                                 placeholder="Detalle adicional de la novedad..."
                             />
                         </div>
+                        <div className="md:col-span-2 space-y-2">
+                            <label className="text-xs font-black uppercase text-muted-foreground tracking-widest pl-1">Soporte (opcional)</label>
+                            {formData.attachment_url ? (
+                                <div className="flex items-center justify-between gap-3 p-4 bg-primary/5 border-2 border-primary/10 rounded-2xl">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <Paperclip className="w-5 h-5 text-primary shrink-0" />
+                                        <span className="font-bold text-sm truncate">{formData.attachment_file_name || 'Archivo adjunto'}</span>
+                                    </div>
+                                    <button type="button" onClick={handleRemoveAttachment} className="text-destructive hover:underline font-black text-[10px] uppercase shrink-0">
+                                        Quitar
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/10 border-2 border-dashed rounded-2xl">
+                                    <input ref={attachmentInputRef} type="file" onChange={handleUploadAttachment} accept=".pdf,.doc,.docx,image/*" className="hidden" id="leave-attachment-input" disabled={uploadingAttachment} />
+                                    <label htmlFor="leave-attachment-input"
+                                        className={`flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-black text-[10px] uppercase tracking-widest cursor-pointer hover:shadow-lg transition-all active:scale-95 ${uploadingAttachment ? 'opacity-50 pointer-events-none' : ''}`}>
+                                        <Upload className="w-4 h-4" /> {uploadingAttachment ? 'Subiendo...' : 'Adjuntar Soporte'}
+                                    </label>
+                                    <span className="text-[10px] text-muted-foreground font-bold uppercase">Ej: certificado de incapacidad — PDF, Word o imagen, máx. 15MB</span>
+                                </div>
+                            )}
+                        </div>
                         <div className="md:col-span-2 flex justify-end">
                             <button type="submit" className="flex items-center gap-3 px-12 py-4 bg-primary text-primary-foreground rounded-2xl font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
                                 <Save className="w-5 h-5" /> {editingId ? 'GUARDAR CAMBIOS' : 'REGISTRAR NOVEDAD'}
@@ -509,6 +603,15 @@ export const LeaveManagement: React.FC<LeaveManagementProps> = ({ companyId, cur
                                                     <XCircle className="w-4.5 h-4.5" />
                                                 </button>
                                             </>
+                                        )}
+                                        {req.attachment_url && (
+                                            <button
+                                                onClick={() => handleViewAttachment(req.attachment_url)}
+                                                className="p-3 bg-white/80 backdrop-blur-sm border shadow-sm rounded-2xl text-primary hover:bg-primary hover:text-white transition-all hover:scale-110 active:scale-90"
+                                                title="Ver soporte adjunto"
+                                            >
+                                                <Download className="w-4.5 h-4.5" />
+                                            </button>
                                         )}
                                         <button
                                             onClick={() => openHistory(req)}
