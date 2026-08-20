@@ -615,6 +615,36 @@ Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar 
 
 ---
 
+## 22. Módulo de Informes — Fase 1: RPC extendido + Informe 1 (2026-08-20)
+
+El cliente real pidió una lista de 5 informes operativos (ver plan completo en `.claude/plans/buzzing-snacking-spark.md` de la sesión). Se decidió con el usuario entregarlos **uno a la vez, confirmando cada uno con datos reales** antes de seguir al siguiente — esta sección cubre la Fase 1: extender el RPC de nómina (base para los 5) + el primer informe (detalle por empleado/día).
+
+### Por qué se construye sobre el RPC y no client-side
+El dashboard actual ya tiene 4 pestañas de "Reportes" básicas, pero calculan todo en el navegador sobre `entries` crudos — el mismo patrón que causó el bug real de escala del 10 de agosto (límite de 1000 filas de Supabase). Para informes que el cliente va a exportar sobre rangos largos y "todos los empleados", se construyen sobre `payroll_daily_breakdown` (ya validado 0/144 en dos rondas). Las 4 pestañas viejas de `AdminDashboard.tsx` no se tocaron — siguen como vista rápida; el módulo nuevo es la vía escalable.
+
+### Extensión del RPC — `supabase/migrations/0011_payroll_daily_breakdown_v2.sql`
+No se editó `0010` (ya aplicada en ambas instancias — convención del repo: migraciones aditivas, nunca se edita una ya aplicada). `0011` recrea `_payroll_calc_daily`/`payroll_daily_breakdown`/`payroll_period_summary` (drop + create, porque Postgres no permite `CREATE OR REPLACE` cuando cambia el `RETURNS TABLE`) con 3 cambios:
+
+1. **Fix de domingo, ahora también en el servidor**: mismo fix que se hizo en el navegador el mismo día (sección 21) — nueva función `_payroll_split_sunday_minutes()` (traducción 1:1 de `splitSundayMinutes()`), sin pivote ordinaria/extra, solo diurno/nocturno, usando `hourly_rate_sunday_holiday_extra_night` para la franja nocturna. El RPC había quedado desactualizado respecto al navegador tras el fix de esa misma sesión — no estaba en el camino de producción así que no afectaba al cliente real, pero el módulo de Informes nuevo sí depende de él.
+2. **`leave_type text` nuevo** en la salida diaria: tipo de novedad aprobada que cubre el día (null si no hay). No se agregó `leave_status` por separado — sería trivialmente `'approved'` siempre, sin valor informativo.
+3. **`late_minutes numeric` nuevo**: magnitud de la llegada tarde (antes solo había `is_late` boolean). Si hubo más de un turno el mismo día, se toma el peor caso (`max`), mismo criterio "un valor por día" que ya usaba `is_late` (`bool_or`).
+
+**Autopruebas**: se reutilizan los mismos 4 perfiles/escenarios A-L de `0010`, con el escenario D (domingo) **modificado a propósito** para cruzar la franja nocturna (antes 08:00-12:00, ahora 08:00-22:00) — con la lógica vieja este escenario habría dado un costo distinto, así que ahora sí ejercita el fix de verdad (antes, el domingo de prueba nunca tocaba la franja nocturna, por eso las autopruebas de `0010` pasaban pese al bug). Se agregaron 3 verificaciones nuevas (`late_minutes` en el escenario de llegada tarde, `leave_type` con y sin novedad aprobada). Total: **45 verificaciones** (antes 42). Todos los valores esperados se recalcularon a mano y se verificaron con aritmética explícita antes de escribir el archivo (no se pudo ejecutar el SQL en este entorno — sin acceso de escritura a ninguna base de datos).
+
+### `PayrollRpcShadowPanel.tsx`
+Actualizado para pedir y comparar `late_minutes` (nuevo campo numérico, con la misma tolerancia que el resto). `leave_type` no se agrega al conteo de coincidencias/discrepancias — es un lookup directo a `InA_leave_requests`, no un cálculo propenso a bugs como los campos numéricos que sí vale la pena cruzar con tolerancia.
+
+### Informe 1 — `frontend/src/components/ReportsCenter.tsx` (nuevo)
+Nuevo módulo separado, no más pestañas dentro de `AdminDashboard.tsx`. Nueva entrada de menú "Informes" en `App.tsx` (visible para `admin` y `superadmin`, no solo superadmin — a diferencia del panel Beta de nómina). Selector de sede (heredado, ya seleccionada globalmente) + rango de fechas (default: últimos 30 días) + botón "Generar Informe" que llama `payroll_daily_breakdown`. Tabla con: empleado, fecha, minutos trabajados, desayuno, almuerzo, ordinaria, extra diurna/nocturna/dominical, minutos de tardanza, novedad (tipo, si aplica, o "Ausencia Injustificada"), costo. Filas en cero completo se ocultan (evita una tabla enorme de días sin nada que mostrar). Exportable a Excel con el mismo patrón ya usado en `AdminDashboard.tsx` (`XLSX.utils.aoa_to_sheet` + `book_append_sheet` + `writeFile`) — sin el límite de 1000 filas porque viene del RPC, no de una consulta directa a `InA_time_entries`.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. **No se pudo probar contra datos reales** (sin acceso de escritura/autenticado a ninguna instancia). **Pendiente para el usuario:**
+1. Ejecutar `0011_payroll_daily_breakdown_v2.sql` completo en el SQL Editor de la instancia de Producción, confirmar `PAYROLL_RPC_SELFTEST_V2: 45/45 VERIFICACIONES OK` — si falla, la migración se revierte sola.
+2. Repetir la comparación en "Nómina (Servidor) — Beta" con un rango que incluya domingos y alguna novedad aprobada — debe seguir dando 0 de N coincidencias (ahora con `late_minutes` incluido en el conteo).
+3. Probar el Informe 1 en el panel nuevo "Informes" con datos reales de una sede, confirmar que el tipo de novedad se ve correcto en los días cubiertos, y que el Excel exportado abre bien.
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash

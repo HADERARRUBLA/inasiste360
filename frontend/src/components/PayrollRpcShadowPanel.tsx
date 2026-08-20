@@ -21,19 +21,20 @@ interface DailyRow {
     cost: number;
     is_late: boolean;
     is_unjustified_absence: boolean;
+    late_minutes: number;
 }
 
 const emptyRow = (): DailyRow => ({
     minutes_work: 0, ordinary_minutes: 0, extra_day_minutes: 0, extra_night_minutes: 0, extra_sunday_minutes: 0,
     breakfast_minutes: 0, lunch_minutes: 0, active_pause_minutes: 0, other_minutes: 0,
-    cost: 0, is_late: false, is_unjustified_absence: false
+    cost: 0, is_late: false, is_unjustified_absence: false, late_minutes: 0
 });
 
 const dayMap: Record<number, string> = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
 
 const NUMERIC_FIELDS: (keyof DailyRow)[] = [
     'minutes_work', 'ordinary_minutes', 'extra_day_minutes', 'extra_night_minutes', 'extra_sunday_minutes',
-    'breakfast_minutes', 'lunch_minutes', 'active_pause_minutes', 'other_minutes', 'cost'
+    'breakfast_minutes', 'lunch_minutes', 'active_pause_minutes', 'other_minutes', 'cost', 'late_minutes'
 ];
 const BOOLEAN_FIELDS: (keyof DailyRow)[] = ['is_late', 'is_unjustified_absence'];
 
@@ -41,7 +42,7 @@ const FIELD_LABELS: Record<keyof DailyRow, string> = {
     minutes_work: 'Min. Trabajo', ordinary_minutes: 'Min. Ordinarios', extra_day_minutes: 'Extra Diurna',
     extra_night_minutes: 'Extra Nocturna', extra_sunday_minutes: 'Extra Dominical', breakfast_minutes: 'Desayuno',
     lunch_minutes: 'Almuerzo', active_pause_minutes: 'Pausa Activa', other_minutes: 'Otros',
-    cost: 'Costo', is_late: 'Tarde', is_unjustified_absence: 'Ausencia Injustificada'
+    cost: 'Costo', is_late: 'Tarde', is_unjustified_absence: 'Ausencia Injustificada', late_minutes: 'Min. Tarde'
 };
 
 function computeClientDaily(
@@ -75,7 +76,11 @@ function computeClientDaily(
         const [h, m] = sched.start.split(':').map(Number);
         const schedTime = new Date(firstIn);
         schedTime.setHours(h, m, 0, 0);
-        if (firstIn > schedTime) ensureRow(group.profileId, group.dateKey).is_late = true;
+        if (firstIn > schedTime) {
+            const row = ensureRow(group.profileId, group.dateKey);
+            row.is_late = true;
+            row.late_minutes = Math.max(row.late_minutes, (firstIn.getTime() - schedTime.getTime()) / 60000);
+        }
     });
 
     const shiftKeys = new Set(shiftGroups.map(g => `${g.profileId}_${g.dateKey}`));
@@ -236,7 +241,8 @@ export const PayrollRpcShadowPanel: React.FC<PayrollRpcShadowPanelProps> = ({ co
                     extra_sunday_minutes: Number(r.extra_sunday_minutes), breakfast_minutes: Number(r.breakfast_minutes),
                     lunch_minutes: Number(r.lunch_minutes), active_pause_minutes: Number(r.active_pause_minutes),
                     other_minutes: Number(r.other_minutes), cost: Number(r.cost),
-                    is_late: r.is_late, is_unjustified_absence: r.is_unjustified_absence
+                    is_late: r.is_late, is_unjustified_absence: r.is_unjustified_absence,
+                    late_minutes: Number(r.late_minutes || 0)
                 });
             });
             setRpcDaily(rpcMap);
