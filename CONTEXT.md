@@ -653,6 +653,25 @@ Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar 
 
 ---
 
+## 23. Bug real: un admin multi-sede nunca podía cambiar de sede (2026-08-20)
+
+El usuario reportó que, logueado como admin (no superadmin), el dashboard nunca deja elegir sede aunque el admin tenga varias a cargo. Dos causas independientes, ambas necesarias para el fix:
+
+1. **`App.tsx` → `loadCompaniesForProfile()`**: para cualquier perfil que no fuera superadmin, la consulta de sedes SIEMPRE se limitaba a `eq('id', profile.company_id)` — solo la sede principal. La tabla `InA_admin_branches` (creada en la Fase 2, con checkboxes de "Sedes Autorizadas" en `AdminManagement.tsx`) nunca se consultaba para poblar el selector de un admin normal — la funcionalidad de multi-sede para admins llevaba desde la Fase 2 sin efecto real en el dashboard.
+2. **RLS de `InA_admin_branches`** (migración 0001): la política `admin_branches_all` usaba `using (is_superadmin())` a secas — un admin normal no podía leer ni sus propias filas. Aunque se hubiera corregido el punto 1 solamente, la consulta habría devuelto vacío igual.
+
+**Corregido:**
+- [`supabase/migrations/0012_admin_branches_self_select.sql`](supabase/migrations/0012_admin_branches_self_select.sql) (el usuario debe ejecutarla en ambas instancias): agrega una política de solo lectura para que un admin vea sus propias asignaciones (`admin_id = su propio id`), sin tocar el control exclusivo de superadmin sobre crear/editar/borrar asignaciones (2 políticas PERMISSIVE, Postgres las combina con OR).
+- `App.tsx`: `loadCompaniesForProfile()` ahora, para admins normales, trae sede principal + sedes de `InA_admin_branches` (mismo patrón de fusión de dos consultas ya usado en `EmployeeManagement.tsx`/`LeaveManagement.tsx`).
+- El selector de "Sede Activa" en el header ya no está condicionado a `role === 'superadmin'` — se muestra a cualquier perfil con más de 1 sede disponible (antes ni con la data correcta se habría visto).
+
+Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente para el usuario:**
+1. Ejecutar `0012_admin_branches_self_select.sql` en ambas instancias (pruebas y Producción).
+2. Confirmar con `select policyname, cmd from pg_policies where tablename = 'InA_admin_branches'` que quedan 2 políticas.
+3. Loguearse como un admin normal con 2+ sedes asignadas y confirmar que el selector aparece y permite cambiar entre ellas.
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash

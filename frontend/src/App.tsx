@@ -63,15 +63,32 @@ function App() {
     try {
       setUserProfile(profile);
 
-      let query = supabase.from('InA_companies').select('*').order('name');
-      if (profile.role !== 'superadmin' && profile.company_id) {
-        query = query.eq('id', profile.company_id);
+      let companiesData: any[] = [];
+      if (profile.role === 'superadmin') {
+        const { data, error } = await supabase.from('InA_companies').select('*').order('name');
+        if (error) throw error;
+        companiesData = data || [];
+      } else {
+        // Sede principal + sedes autorizadas vía InA_admin_branches
+        // (multi-sede) — antes solo se traía la sede principal, dejando sin
+        // efecto las "Sedes Autorizadas" asignadas desde Gestión de
+        // Administradores (bug real, corregido junto con la migración
+        // 0012_admin_branches_self_select.sql que habilita esta lectura).
+        const [{ data: primary, error: primaryError }, { data: extra, error: extraError }] = await Promise.all([
+          profile.company_id
+            ? supabase.from('InA_companies').select('*').eq('id', profile.company_id)
+            : Promise.resolve({ data: [] as any[], error: null }),
+          supabase.from('InA_companies').select('*, admin_branches:InA_admin_branches!inner(admin_id)').eq('admin_branches.admin_id', profile.id)
+        ]);
+        if (primaryError) throw primaryError;
+        if (extraError) throw extraError;
+        const merged = [...(primary || [])];
+        (extra || []).forEach((c: any) => { if (!merged.find((m: any) => m.id === c.id)) merged.push(c); });
+        merged.sort((a: any, b: any) => a.name.localeCompare(b.name));
+        companiesData = merged;
       }
 
-      const { data: companiesData, error: companiesError } = await query;
-      if (companiesError) throw companiesError;
-
-      if (companiesData && companiesData.length > 0) {
+      if (companiesData.length > 0) {
         setCompanies(companiesData);
 
         // Priority: Current selection (if valid) > Profile company > LocalStorage pinned > First available
@@ -387,7 +404,7 @@ function App() {
         </div>
 
         <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-          {userProfile?.role === 'superadmin' && companies.length > 1 && (
+          {companies.length > 1 && (
             <div className="hidden sm:flex items-center gap-2 bg-muted/50 p-1 rounded-xl border">
               <Building2 className="w-4 h-4 ml-2 text-muted-foreground" />
               <select
