@@ -670,6 +670,23 @@ Verificado: `npx tsc --noEmit` y `npm run build` limpios. **Pendiente para el us
 2. Confirmar con `select policyname, cmd from pg_policies where tablename = 'InA_admin_branches'` que quedan 2 políticas.
 3. Loguearse como un admin normal con 2+ sedes asignadas y confirmar que el selector aparece y permite cambiar entre ellas.
 
+**Verificado en vivo por el usuario (2026-08-20):** migración corrida en ambas instancias, 2 políticas confirmadas, admin de prueba con 2 sedes ve el selector y cambia correctamente entre ellas.
+
+---
+
+## 24. Módulo de Informes — Fase 2: Informe 2, agregado por tipo (2026-08-20)
+
+Segundo informe de los 5 pedidos por el cliente (ver hoja de ruta en la sección 22). Reutiliza las mismas filas ya traídas del RPC para el Informe 1 en la misma sesión de "Generar Informe" — no hace una segunda llamada al RPC, solo las agrega distinto.
+
+### Qué se implementó en `ReportsCenter.tsx`
+- **Tiempos por categoría** (todos los empleados del periodo, sumados desde las filas ya cargadas): Desayuno, Almuerzo, Pausa Activa, Otros — 4 tarjetas con el total en horas.
+- **Ausencias no justificadas**: conteo total de días en el periodo (mismo dato que ya trae el RPC por fila, sumado).
+- **Novedades por tipo**: tabla con cantidad de solicitudes y días por tipo (vacaciones, incapacidad EPS/ARL, permisos, etc.) — a diferencia de los tiempos de arriba, esto **sí requiere una consulta nueva** directa a `InA_leave_requests` (no se deriva de contar días en la grilla del RPC) porque la grilla no distingue "2 incapacidades de 2 días" de "1 incapacidad de 4 días" — ambas se ven igual si solo se cuentan días cubiertos. La consulta se acota a los empleados en alcance (todos los de la sede, o el empleado filtrado en el Informe 1) y al rango de fechas, recortando (`clamp`) los días de cada solicitud al rango pedido.
+- Export a Excel propio (hoja separada, mismo patrón `aoa_to_sheet`/`writeFile`), independiente del export del Informe 1.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo:** generar el informe con un rango que tenga novedades aprobadas de al menos 2 tipos distintos, y confirmar que cantidad/días coinciden con lo que se ve en el módulo de Novedades.
+
 ---
 
 ## 10. Cómo correr el proyecto localmente

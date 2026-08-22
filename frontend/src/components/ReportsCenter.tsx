@@ -58,6 +58,17 @@ interface OtherSedeInfo {
     bySede: { name: string; minutes: number }[];
 }
 
+interface LeaveTotal {
+    count: number;
+    days: number;
+}
+
+const daysBetween = (start: string, end: string) => {
+    const s = new Date(start + 'T00:00:00');
+    const e = new Date(end + 'T00:00:00');
+    return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+};
+
 export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, companyName }) => {
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 30)).toLocaleDateString('en-CA'),
@@ -74,6 +85,7 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
     // informe (confirmado con el usuario 2026-08-20: nota en la misma fila,
     // no una columna aparte ni un informe combinado).
     const [otherSedeMap, setOtherSedeMap] = useState<Record<string, OtherSedeInfo>>({});
+    const [leaveTotals, setLeaveTotals] = useState<Record<string, LeaveTotal>>({});
 
     useEffect(() => {
         setSelectedProfileId('all');
@@ -143,6 +155,39 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
         }
     };
 
+    const fetchLeaveTotals = async () => {
+        const profileIds = selectedProfileId === 'all' ? employees.map(e => e.id) : [selectedProfileId];
+        if (profileIds.length === 0) { setLeaveTotals({}); return; }
+        try {
+            // Cantidad de solicitudes y días por tipo — se consulta directo a
+            // InA_leave_requests (no se deriva de los días del RPC) porque
+            // ahí sí se puede contar "cuántas solicitudes" además de "cuántos
+            // días", cosa que el conteo de días-en-la-grilla no distingue
+            // (2 incapacidades de 2 días cada una vs. 1 de 4 días se ven
+            // igual si solo se cuentan días).
+            const { data, error: leaveError } = await supabase.from('InA_leave_requests')
+                .select('profile_id, type, start_date, end_date')
+                .in('profile_id', profileIds)
+                .eq('status', 'approved')
+                .lte('start_date', dateRange.end)
+                .gte('end_date', dateRange.start);
+            if (leaveError) throw leaveError;
+
+            const totals: Record<string, LeaveTotal> = {};
+            (data || []).forEach((lr: any) => {
+                const clampedStart = lr.start_date < dateRange.start ? dateRange.start : lr.start_date;
+                const clampedEnd = lr.end_date > dateRange.end ? dateRange.end : lr.end_date;
+                if (!totals[lr.type]) totals[lr.type] = { count: 0, days: 0 };
+                totals[lr.type].count += 1;
+                totals[lr.type].days += daysBetween(clampedStart, clampedEnd);
+            });
+            setLeaveTotals(totals);
+        } catch (err) {
+            console.error('Error consultando novedades por tipo:', err);
+            setLeaveTotals({});
+        }
+    };
+
     const runReport = async () => {
         if (!companyId) return;
         setLoading(true);
@@ -161,13 +206,49 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
             );
             setRows(withData);
             setHasRun(true);
-            await fetchOtherSedeHours(Array.from(new Set(withData.map((r: any) => r.profile_id))));
+            await Promise.all([
+                fetchOtherSedeHours(Array.from(new Set(withData.map((r: any) => r.profile_id)))),
+                fetchLeaveTotals()
+            ]);
         } catch (err: any) {
             console.error('Error generando el informe:', err);
             setError(err.message || 'Error desconocido al generar el informe.');
         } finally {
             setLoading(false);
         }
+    };
+
+    // Informe 2: agregado por tipo — mismas filas ya traídas para el
+    // Informe 1, sumadas por categoría en vez de por empleado/día.
+    const categoryTotals = {
+        breakfastMinutes: rows.reduce((s, r) => s + r.breakfast_minutes, 0),
+        lunchMinutes: rows.reduce((s, r) => s + r.lunch_minutes, 0),
+        activePauseMinutes: rows.reduce((s, r) => s + r.active_pause_minutes, 0),
+        otherMinutes: rows.reduce((s, r) => s + r.other_minutes, 0),
+        unjustifiedAbsences: rows.filter(r => r.is_unjustified_absence).length
+    };
+
+    const exportCategoryToExcel = () => {
+        const aoa: any[][] = [
+            [`Informe Agregado por Tipo${companyName ? ' — ' + companyName : ''}`],
+            [`Periodo: ${dateRange.start} a ${dateRange.end}`],
+            [],
+            ['Tiempos (todos los empleados)', 'Horas'],
+            ['Desayuno', (categoryTotals.breakfastMinutes / 60).toFixed(1)],
+            ['Almuerzo', (categoryTotals.lunchMinutes / 60).toFixed(1)],
+            ['Pausa Activa', (categoryTotals.activePauseMinutes / 60).toFixed(1)],
+            ['Otros', (categoryTotals.otherMinutes / 60).toFixed(1)],
+            [],
+            ['Ausencias No Justificadas (días)', categoryTotals.unjustifiedAbsences],
+            [],
+            ['Novedades por Tipo', 'Cantidad de Solicitudes', 'Días'],
+            ...Object.entries(leaveTotals).map(([type, t]) => [LEAVE_TYPE_LABELS[type] || type, t.count, t.days])
+        ];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        XLSX.utils.book_append_sheet(wb, ws, 'Agregado por Tipo');
+        XLSX.writeFile(wb, `informe_agregado_por_tipo_${dateRange.start}_a_${dateRange.end}.xlsx`);
+        showToast('Excel exportado.', 'success');
     };
 
     const exportToExcel = () => {
@@ -322,6 +403,68 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
                                         </tr>
                                         );
                                     })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {hasRun && !loading && (
+                <div className="bg-card border rounded-[2rem] p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-primary">2. Agregado por Tipo</h3>
+                        <button
+                            onClick={exportCategoryToExcel}
+                            className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors"
+                        >
+                            <FileDown className="w-4 h-4" /> Exportar a Excel
+                        </button>
+                    </div>
+
+                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Tiempos (todos los empleados del periodo)</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        {[
+                            { label: 'Desayuno', minutes: categoryTotals.breakfastMinutes },
+                            { label: 'Almuerzo', minutes: categoryTotals.lunchMinutes },
+                            { label: 'Pausa Activa', minutes: categoryTotals.activePauseMinutes },
+                            { label: 'Otros', minutes: categoryTotals.otherMinutes }
+                        ].map(item => (
+                            <div key={item.label} className="bg-muted/20 border rounded-2xl p-4 text-center">
+                                <p className="text-2xl font-black text-primary">{(item.minutes / 60).toFixed(1)}h</p>
+                                <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mt-1">{item.label}</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 mb-6 inline-flex items-center gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600" />
+                        <span className="text-sm font-bold text-red-700">{categoryTotals.unjustifiedAbsences} día(s) de ausencia no justificada en el periodo</span>
+                    </div>
+
+                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Novedades por Tipo</p>
+                    {Object.keys(leaveTotals).length === 0 ? (
+                        <p className="text-center text-muted-foreground text-xs font-black uppercase tracking-widest opacity-30 italic py-8">
+                            Sin novedades aprobadas en el rango seleccionado.
+                        </p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="text-left p-3 font-bold">Tipo de Novedad</th>
+                                        <th className="text-right p-3 font-bold">Cantidad de Solicitudes</th>
+                                        <th className="text-right p-3 font-bold">Días (en el rango)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Object.entries(leaveTotals).map(([type, t]) => (
+                                        <tr key={type} className="border-t">
+                                            <td className="p-3 font-bold">{LEAVE_TYPE_LABELS[type] || type}</td>
+                                            <td className="p-3 text-right">{t.count}</td>
+                                            <td className="p-3 text-right">{t.days}</td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
