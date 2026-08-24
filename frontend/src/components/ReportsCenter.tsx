@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
-import { FileDown, Loader2, RefreshCw, AlertTriangle, MapPinned } from 'lucide-react';
+import { FileDown, Loader2, RefreshCw, AlertTriangle, MapPinned, Clock } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
 import { fetchAllRows } from '../utils/supabasePagination';
 
@@ -69,6 +69,15 @@ const daysBetween = (start: string, end: string) => {
     return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
 };
 
+// Lunes de la semana ISO a la que pertenece la fecha (para agrupar "por semana").
+const getWeekStart = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = d.getDay(); // 0=domingo..6=sábado
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return d.toLocaleDateString('en-CA');
+};
+
 export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, companyName }) => {
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 30)).toLocaleDateString('en-CA'),
@@ -86,6 +95,7 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
     // no una columna aparte ni un informe combinado).
     const [otherSedeMap, setOtherSedeMap] = useState<Record<string, OtherSedeInfo>>({});
     const [leaveTotals, setLeaveTotals] = useState<Record<string, LeaveTotal>>({});
+    const [lateView, setLateView] = useState<'employee' | 'day' | 'week'>('employee');
 
     useEffect(() => {
         setSelectedProfileId('all');
@@ -248,6 +258,82 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         XLSX.utils.book_append_sheet(wb, ws, 'Agregado por Tipo');
         XLSX.writeFile(wb, `informe_agregado_por_tipo_${dateRange.start}_a_${dateRange.end}.xlsx`);
+        showToast('Excel exportado.', 'success');
+    };
+
+    // Informe 3: llegadas tarde — mismas filas del RPC, sin consultas nuevas.
+    const lateRows = rows.filter(r => r.is_late);
+
+    const lateGeneral = {
+        totalLateDays: lateRows.length,
+        totalLateMinutes: lateRows.reduce((s, r) => s + r.late_minutes, 0),
+        employeesWithLate: new Set(lateRows.map(r => r.profile_id)).size,
+        avgLateMinutes: lateRows.length ? lateRows.reduce((s, r) => s + r.late_minutes, 0) / lateRows.length : 0
+    };
+
+    const lateByEmployee = (() => {
+        const map: Record<string, { name: string; nationalId: string; days: number; totalMinutes: number }> = {};
+        lateRows.forEach(r => {
+            if (!map[r.profile_id]) map[r.profile_id] = { name: r.full_name, nationalId: r.national_id, days: 0, totalMinutes: 0 };
+            map[r.profile_id].days += 1;
+            map[r.profile_id].totalMinutes += r.late_minutes;
+        });
+        return Object.values(map).sort((a, b) => b.totalMinutes - a.totalMinutes);
+    })();
+
+    const lateByDay = (() => {
+        const map: Record<string, { count: number; totalMinutes: number }> = {};
+        lateRows.forEach(r => {
+            if (!map[r.work_date]) map[r.work_date] = { count: 0, totalMinutes: 0 };
+            map[r.work_date].count += 1;
+            map[r.work_date].totalMinutes += r.late_minutes;
+        });
+        return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([date, v]) => ({ date, ...v }));
+    })();
+
+    const lateByWeek = (() => {
+        const map: Record<string, { count: number; totalMinutes: number }> = {};
+        lateRows.forEach(r => {
+            const week = getWeekStart(r.work_date);
+            if (!map[week]) map[week] = { count: 0, totalMinutes: 0 };
+            map[week].count += 1;
+            map[week].totalMinutes += r.late_minutes;
+        });
+        return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([week, v]) => ({ week, ...v }));
+    })();
+
+    const exportLateToExcel = () => {
+        const wb = XLSX.utils.book_new();
+        const title = `Informe Llegadas Tarde${companyName ? ' — ' + companyName : ''}`;
+        const period = `Periodo: ${dateRange.start} a ${dateRange.end}`;
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            [title], [period], [],
+            ['Total días con tardanza', lateGeneral.totalLateDays],
+            ['Total minutos tarde (suma)', Math.round(lateGeneral.totalLateMinutes)],
+            ['Empleados con al menos 1 tardanza', lateGeneral.employeesWithLate],
+            ['Promedio de minutos tarde por día tarde', Math.round(lateGeneral.avgLateMinutes)]
+        ]), 'General');
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            [title], [period], [],
+            ['Empleado', 'Identificación', 'Días Tarde', 'Min. Tarde Total', 'Promedio Min/Día'],
+            ...lateByEmployee.map(e => [e.name, e.nationalId, e.days, Math.round(e.totalMinutes), Math.round(e.totalMinutes / e.days)])
+        ]), 'Por Empleado');
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            [title], [period], [],
+            ['Fecha', 'Empleados Tarde', 'Min. Tarde Total'],
+            ...lateByDay.map(d => [d.date, d.count, Math.round(d.totalMinutes)])
+        ]), 'Por Día');
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            [title], [period], [],
+            ['Semana (lunes)', 'Casos de Tardanza', 'Min. Tarde Total'],
+            ...lateByWeek.map(w => [w.week, w.count, Math.round(w.totalMinutes)])
+        ]), 'Por Semana');
+
+        XLSX.writeFile(wb, `informe_llegadas_tarde_${dateRange.start}_a_${dateRange.end}.xlsx`);
         showToast('Excel exportado.', 'success');
     };
 
@@ -463,6 +549,122 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
                                             <td className="p-3 font-bold">{LEAVE_TYPE_LABELS[type] || type}</td>
                                             <td className="p-3 text-right">{t.count}</td>
                                             <td className="p-3 text-right">{t.days}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {hasRun && !loading && (
+                <div className="bg-card border rounded-[2rem] p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-primary">3. Llegadas Tarde</h3>
+                        <button
+                            onClick={exportLateToExcel}
+                            className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors"
+                        >
+                            <FileDown className="w-4 h-4" /> Exportar a Excel
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-muted/20 border rounded-2xl p-4 text-center">
+                            <p className="text-2xl font-black text-primary">{lateGeneral.totalLateDays}</p>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mt-1">Días con Tardanza</p>
+                        </div>
+                        <div className="bg-muted/20 border rounded-2xl p-4 text-center">
+                            <p className="text-2xl font-black text-primary">{Math.round(lateGeneral.totalLateMinutes)}</p>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mt-1">Min. Tarde (Total)</p>
+                        </div>
+                        <div className="bg-muted/20 border rounded-2xl p-4 text-center">
+                            <p className="text-2xl font-black text-primary">{lateGeneral.employeesWithLate}</p>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mt-1">Empleados con Tardanza</p>
+                        </div>
+                        <div className="bg-muted/20 border rounded-2xl p-4 text-center">
+                            <p className="text-2xl font-black text-primary">{Math.round(lateGeneral.avgLateMinutes)}</p>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mt-1">Promedio Min/Día Tarde</p>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 mb-4">
+                        {([['employee', 'Por Empleado'], ['day', 'Por Día'], ['week', 'Por Semana']] as const).map(([key, label]) => (
+                            <button
+                                key={key}
+                                onClick={() => setLateView(key)}
+                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${lateView === key ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'}`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {lateRows.length === 0 ? (
+                        <p className="text-center text-muted-foreground text-xs font-black uppercase tracking-widest opacity-30 italic py-8">
+                            Sin llegadas tarde en el rango seleccionado.
+                        </p>
+                    ) : lateView === 'employee' ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="text-left p-3 font-bold">Empleado</th>
+                                        <th className="text-right p-3 font-bold">Días Tarde</th>
+                                        <th className="text-right p-3 font-bold">Min. Tarde Total</th>
+                                        <th className="text-right p-3 font-bold">Promedio Min/Día</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lateByEmployee.map(e => (
+                                        <tr key={e.name + e.nationalId} className="border-t">
+                                            <td className="p-3 font-bold flex items-center gap-2"><Clock className="w-3.5 h-3.5 text-amber-600" />{e.name}</td>
+                                            <td className="p-3 text-right">{e.days}</td>
+                                            <td className="p-3 text-right">{Math.round(e.totalMinutes)}</td>
+                                            <td className="p-3 text-right">{Math.round(e.totalMinutes / e.days)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : lateView === 'day' ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="text-left p-3 font-bold">Fecha</th>
+                                        <th className="text-right p-3 font-bold">Empleados Tarde</th>
+                                        <th className="text-right p-3 font-bold">Min. Tarde Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lateByDay.map(d => (
+                                        <tr key={d.date} className="border-t">
+                                            <td className="p-3 font-bold">{d.date}</td>
+                                            <td className="p-3 text-right">{d.count}</td>
+                                            <td className="p-3 text-right">{Math.round(d.totalMinutes)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="text-left p-3 font-bold">Semana (lunes)</th>
+                                        <th className="text-right p-3 font-bold">Casos de Tardanza</th>
+                                        <th className="text-right p-3 font-bold">Min. Tarde Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lateByWeek.map(w => (
+                                        <tr key={w.week} className="border-t">
+                                            <td className="p-3 font-bold">{w.week}</td>
+                                            <td className="p-3 text-right">{w.count}</td>
+                                            <td className="p-3 text-right">{Math.round(w.totalMinutes)}</td>
                                         </tr>
                                     ))}
                                 </tbody>

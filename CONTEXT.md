@@ -689,6 +689,23 @@ Segundo informe de los 5 pedidos por el cliente (ver hoja de ruta en la sección
 
 ---
 
+## 25. Módulo de Informes — Fase 3: Informe 3, llegadas tarde (2026-08-20)
+
+Tercer informe de los 5. Mismo patrón que el Informe 2: reutiliza las filas ya traídas por "Generar Informe", sin consultas nuevas — todo sale de `is_late`/`late_minutes`, ya presentes en cada fila del RPC.
+
+### Qué se implementó en `ReportsCenter.tsx`
+- **Resumen general** (4 tarjetas): días con tardanza, minutos tarde totales, empleados con al menos una tardanza, promedio de minutos tarde por día tarde.
+- **3 vistas intercambiables** (toggle, no tabs separados de Reportes — mismo patrón de botones que ya usa `AdminManagement.tsx`/`EmployeeManagement.tsx` para el modo de horario):
+  - **Por Empleado**: ranking (mayor a menor minutos tarde acumulados) con días tarde, total y promedio.
+  - **Por Día**: cada fecha del rango con tardanzas, cuántos empleados y minutos totales.
+  - **Por Semana**: agrupado por semana ISO (lunes de inicio), mismo criterio.
+- Export a Excel con las 4 vistas como hojas separadas (General, Por Empleado, Por Día, Por Semana) en un solo archivo — a diferencia de los informes 1 y 2 que exportan una sola hoja, aquí se exportan todas las agrupaciones juntas porque comparten exactamente los mismos datos base, solo agrupados distinto.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo:** generar el informe con un rango que tenga varias llegadas tarde repartidas en más de una semana, y confirmar que las 3 vistas y el Excel cuadran entre sí (la suma de "Por Día" debe coincidir con "Por Empleado" y con el total general).
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash
