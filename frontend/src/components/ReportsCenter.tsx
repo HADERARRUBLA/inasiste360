@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
-import { FileDown, Loader2, RefreshCw, AlertTriangle, MapPinned, Clock } from 'lucide-react';
+import { FileDown, Loader2, RefreshCw, AlertTriangle, MapPinned, Clock, TrendingUp, Siren } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
 import { fetchAllRows } from '../utils/supabasePagination';
 
@@ -337,6 +337,64 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
         showToast('Excel exportado.', 'success');
     };
 
+    // Informe 4: horas extra por empleado + alertas del periodo. Mismas
+    // filas del RPC, sin consultas nuevas — reconstruye las 3 alertas que
+    // hoy solo se ven "en vivo" para el día de hoy en AdminDashboard.tsx
+    // (stats.alerts), pero aquí sobre el rango completo del informe.
+    const extraByEmployee = (() => {
+        const map: Record<string, { name: string; nationalId: string; extraDay: number; extraNight: number; extraSunday: number; cost: number }> = {};
+        rows.forEach(r => {
+            if (!map[r.profile_id]) map[r.profile_id] = { name: r.full_name, nationalId: r.national_id, extraDay: 0, extraNight: 0, extraSunday: 0, cost: 0 };
+            map[r.profile_id].extraDay += r.extra_day_minutes;
+            map[r.profile_id].extraNight += r.extra_night_minutes;
+            map[r.profile_id].extraSunday += r.extra_sunday_minutes;
+            map[r.profile_id].cost += r.cost;
+        });
+        return Object.values(map)
+            .map(e => ({ ...e, totalExtra: e.extraDay + e.extraNight + e.extraSunday }))
+            .filter(e => e.totalExtra > 0)
+            .sort((a, b) => b.totalExtra - a.totalExtra);
+    })();
+
+    interface AlertRow { employeeName: string; date: string; type: string; description: string; severity: 'error' | 'warning'; }
+
+    const periodAlerts: AlertRow[] = [];
+    lateRows.forEach(r => periodAlerts.push({
+        employeeName: r.full_name, date: r.work_date, type: 'Llegada Tarde',
+        description: `${Math.round(r.late_minutes)} min tarde`, severity: 'error'
+    }));
+    rows.filter(r => r.is_unjustified_absence).forEach(r => periodAlerts.push({
+        employeeName: r.full_name, date: r.work_date, type: 'Ausencia No Justificada',
+        description: 'No registró marcación ese día', severity: 'error'
+    }));
+    // Mismo umbral que AdminDashboard.tsx (>10h extras en el periodo).
+    extraByEmployee.filter(e => e.totalExtra > 600).forEach(e => periodAlerts.push({
+        employeeName: e.name, date: 'Periodo completo', type: 'Alerta Horas Extras',
+        description: `${(e.totalExtra / 60).toFixed(1)}h extras en el periodo`, severity: 'warning'
+    }));
+    periodAlerts.sort((a, b) => (a.severity === b.severity ? a.date.localeCompare(b.date) : a.severity === 'error' ? -1 : 1));
+
+    const exportExtraAlertsToExcel = () => {
+        const wb = XLSX.utils.book_new();
+        const title = `Informe Horas Extra y Alertas${companyName ? ' — ' + companyName : ''}`;
+        const period = `Periodo: ${dateRange.start} a ${dateRange.end}`;
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            [title], [period], [],
+            ['Empleado', 'Identificación', 'Extra Diurna (min)', 'Extra Nocturna (min)', 'Extra Dominical (min)', 'Total Extra (min)', 'Costo Asociado'],
+            ...extraByEmployee.map(e => [e.name, e.nationalId, Math.round(e.extraDay), Math.round(e.extraNight), Math.round(e.extraSunday), Math.round(e.totalExtra), Math.round(e.cost)])
+        ]), 'Horas Extra por Empleado');
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+            [title], [period], [],
+            ['Empleado', 'Fecha', 'Tipo de Alerta', 'Descripción'],
+            ...periodAlerts.map(a => [a.employeeName, a.date, a.type, a.description])
+        ]), 'Alertas del Periodo');
+
+        XLSX.writeFile(wb, `informe_horas_extra_alertas_${dateRange.start}_a_${dateRange.end}.xlsx`);
+        showToast('Excel exportado.', 'success');
+    };
+
     const exportToExcel = () => {
         if (rows.length === 0) return;
         const headers = [
@@ -665,6 +723,91 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ companyId, company
                                             <td className="p-3 font-bold">{w.week}</td>
                                             <td className="p-3 text-right">{w.count}</td>
                                             <td className="p-3 text-right">{Math.round(w.totalMinutes)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {hasRun && !loading && (
+                <div className="bg-card border rounded-[2rem] p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-primary">4. Horas Extra + Alertas del Periodo</h3>
+                        <button
+                            onClick={exportExtraAlertsToExcel}
+                            className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors"
+                        >
+                            <FileDown className="w-4 h-4" /> Exportar a Excel
+                        </button>
+                    </div>
+
+                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Horas Extra por Empleado</p>
+                    {extraByEmployee.length === 0 ? (
+                        <p className="text-center text-muted-foreground text-xs font-black uppercase tracking-widest opacity-30 italic py-8">
+                            Sin horas extra en el rango seleccionado.
+                        </p>
+                    ) : (
+                        <div className="overflow-x-auto mb-6">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="text-left p-3 font-bold">Empleado</th>
+                                        <th className="text-right p-3 font-bold">Ex. Diurna</th>
+                                        <th className="text-right p-3 font-bold">Ex. Nocturna</th>
+                                        <th className="text-right p-3 font-bold">Ex. Dominical</th>
+                                        <th className="text-right p-3 font-bold">Total Extra</th>
+                                        <th className="text-right p-3 font-bold">Costo Asociado</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {extraByEmployee.map(e => (
+                                        <tr key={e.name + e.nationalId} className={`border-t ${e.totalExtra > 600 ? 'bg-amber-50' : ''}`}>
+                                            <td className="p-3 font-bold flex items-center gap-2">
+                                                <TrendingUp className="w-3.5 h-3.5 text-primary" />{e.name}
+                                                {e.totalExtra > 600 && <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-md text-[9px] font-black uppercase">Alerta</span>}
+                                            </td>
+                                            <td className="p-3 text-right">{fmtMin(e.extraDay)}</td>
+                                            <td className="p-3 text-right">{fmtMin(e.extraNight)}</td>
+                                            <td className="p-3 text-right">{fmtMin(e.extraSunday)}</td>
+                                            <td className="p-3 text-right font-bold">{fmtMin(e.totalExtra)}</td>
+                                            <td className="p-3 text-right">${fmtCost(e.cost)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mb-3">Alertas del Periodo</p>
+                    {periodAlerts.length === 0 ? (
+                        <p className="text-center text-muted-foreground text-xs font-black uppercase tracking-widest opacity-30 italic py-8">
+                            Sin alertas en el rango seleccionado.
+                        </p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="text-left p-3 font-bold">Empleado</th>
+                                        <th className="text-left p-3 font-bold">Fecha</th>
+                                        <th className="text-left p-3 font-bold">Tipo</th>
+                                        <th className="text-left p-3 font-bold">Descripción</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {periodAlerts.map((a, idx) => (
+                                        <tr key={idx} className="border-t">
+                                            <td className="p-3 font-bold">{a.employeeName}</td>
+                                            <td className="p-3">{a.date}</td>
+                                            <td className="p-3">
+                                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-black uppercase ${a.severity === 'error' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                    <Siren className="w-3 h-3" /> {a.type}
+                                                </span>
+                                            </td>
+                                            <td className="p-3 text-muted-foreground">{a.description}</td>
                                         </tr>
                                     ))}
                                 </tbody>

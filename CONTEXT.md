@@ -706,6 +706,22 @@ Tercer informe de los 5. Mismo patrón que el Informe 2: reutiliza las filas ya 
 
 ---
 
+## 26. Módulo de Informes — Fase 4: Informe 4, horas extra + alertas del periodo (2026-08-20)
+
+Cuarto informe de los 5. Mismo patrón que los anteriores — reutiliza las filas ya traídas por "Generar Informe".
+
+### Qué se implementó en `ReportsCenter.tsx`
+- **Horas Extra por Empleado**: tabla (extra diurna/nocturna/dominical + total + costo asociado), ordenada de mayor a menor, solo empleados con extra > 0. Fila resaltada en ámbar + badge "Alerta" cuando el total del periodo supera 600 minutos (10h) — mismo umbral que ya usa `AdminDashboard.tsx` para su alerta de horas extra.
+- **Alertas del Periodo**: a diferencia del panel de alertas del dashboard actual (`stats.alerts` en `AdminDashboard.tsx`), que solo muestra alertas de **hoy**, este informe reconstruye las 3 alertas existentes (Llegada Tarde, Ausencia No Justificada, Alerta Horas Extras) sobre **todo el rango de fechas** del informe — cada llegada tarde y cada ausencia injustificada del periodo aparece como una fila, más una fila por empleado que superó el umbral de horas extra (con fecha "Periodo completo" en vez de un día puntual, porque esa alerta es agregada, no diaria).
+- Export a Excel con 2 hojas (Horas Extra por Empleado, Alertas del Periodo).
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. **Pendiente de probar en vivo:** confirmar que las alertas de tardanza/ausencia coinciden en cantidad con lo que ya muestran los Informes 2 y 3 (mismos datos, distinta presentación), y que el umbral de horas extra se activa correctamente con un caso real.
+
+Con esto quedan **4 de los 5 informes** pedidos por el cliente. Solo falta el **Informe 5** (cumplimiento de tiempo de desayuno/almuerzo con alertas de exceso) — el único que requiere columnas nuevas en `InA_profiles` (`lunch_allowed_minutes`/`breakfast_allowed_minutes`, por empleado) y UI en `EmployeeManagement.tsx`, según quedó planeado en `.claude/plans/buzzing-snacking-spark.md`.
+
+---
+
 ## 10. Cómo correr el proyecto localmente
 
 ```bash
