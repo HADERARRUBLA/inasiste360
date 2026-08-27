@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
-import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X, CalendarOff, FlaskConical, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, LogOut, MapPin, ShieldCheck, LogIn, FileDown, Settings, ArrowRight, Menu, X, CalendarOff, FlaskConical, BarChart3, Smartphone } from 'lucide-react';
 import { KioskMode } from './components/KioskMode';
+import { MobileKioskEntry } from './components/MobileKioskEntry';
 import { AdminDashboard } from './components/AdminDashboard';
 import { EmployeeManagement } from './components/EmployeeManagement';
 import { LeaveManagement } from './components/LeaveManagement';
@@ -26,6 +27,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
+  const [isMobileKiosk, setIsMobileKiosk] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [companies, setCompanies] = useState<any[]>([]);
@@ -276,6 +278,10 @@ function App() {
     );
   }
 
+  if (isMobileKiosk) {
+    return <MobileKioskEntry onBack={() => setIsMobileKiosk(false)} />;
+  }
+
   if (isKiosk) {
     let parsedSettings: any = {};
     try {
@@ -375,6 +381,13 @@ function App() {
               className="w-full flex items-center justify-center gap-2 text-xs font-black text-primary uppercase tracking-widest pt-4 border-t border-muted/50"
             >
               <LogIn className="w-4 h-4" /> Ir a Quiosco Biométrico
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsMobileKiosk(true)}
+              className="w-full flex items-center justify-center gap-2 text-xs font-black text-muted-foreground hover:text-primary uppercase tracking-widest pt-2 transition-colors"
+            >
+              <Smartphone className="w-4 h-4" /> Marcar desde mi Celular (varias sedes)
             </button>
           </form>
         </div>

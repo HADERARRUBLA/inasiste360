@@ -730,3 +730,27 @@ npm install
 npm run dev
 ```
 Requiere `frontend/.env` con `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_APP_ENV=development` (ver `frontend/.env.example`).
+
+---
+
+## 27. Kiosko desde celular para empleados flotantes (2026-08-20)
+
+El usuario reportó que un empleado asignado a varias sedes, marcando desde su propio celular (no una tablet fija), no tenía forma de elegir en qué sede estaba. Investigado: el Kiosko de hoy asume **una tablet física fija por sede** — `companyId`/coordenadas GPS se deciden una sola vez (vía `localStorage` del dispositivo) antes de entrar, sin ningún selector dentro del Kiosko mismo. Ni siquiera la entrada pública "Ir a Quiosco Biométrico" del login tenía forma de cambiar de sede — solo reabría lo que ya estuviera guardado en ese dispositivo (o, en un dispositivo nuevo sin nada guardado, **la primera sede alfabética de toda la base de datos, sin filtrar por organización** — bug latente aparte, anotado pero no corregido en este cambio).
+
+### Decisiones de diseño confirmadas con el usuario antes de construir
+- **Modelo de turnos**: cada sede visitada en el día es un **turno independiente** (Fin de Jornada real al salir, Inicio de Jornada nuevo al llegar a la siguiente) — no un solo turno "pausado" cruzando sedes. Se descartó la alternativa (un turno continuo con el desplazamiento como pausa intermedia) porque el motor de cálculo (RPC + `calculations.ts`) filtra las marcaciones por `company_id` de una sola sede a la vez — un turno que cruzara de sede real perdería datos en el reporte de ambas. El badge "+Xh en otra sede" del Informe 1 (sección 22) ya cubre la visibilidad de este caso sin tocar el motor.
+- **Identificación**: cédula + PIN (no solo PIN) porque un celular sin sede de referencia no puede acotar la búsqueda de antemano, y `pin_code` no tiene restricción de unicidad en el esquema — buscar solo por PIN sería ambiguo entre empleados de distintas organizaciones.
+- **Riesgo real encontrado y mitigado**: buscar por cédula+PIN sin sede amplía la superficie de fuerza bruta frente a `kiosk_verify_pin` (que exige sede+PIN juntos) — con este cambio ya no hace falta saber la sede de antemano. Se agregó control de intentos fallidos (ver migración abajo) para no dejar crecer esa debilidad sin límite.
+
+### Qué se implementó
+- **`supabase/migrations/0013_kiosk_mobile_branches.sql`** (el usuario debe ejecutarla en ambas instancias): tabla `InA_kiosk_login_attempts` (RLS habilitada sin políticas — deny-by-default, solo la toca el RPC) y RPC `kiosk_find_profile_branches(p_national_id, p_pin_code)`, otorgado a `anon`. Devuelve **únicamente** las sedes donde esa persona específica está autorizada (principal + `InA_employee_branches`) — nunca la lista completa de la organización ni de la plataforma. 5 intentos fallidos con la misma cédula bloquean 15 minutos; el contador se reinicia solo si el intento anterior fue hace más de 30 minutos, o de inmediato tras un login correcto.
+- **`frontend/src/components/KioskMode.tsx`**: nuevo prop opcional `autoPin` — si viene, se salta la pantalla de PIN y reintenta automáticamente la verificación ya conocida (`kiosk_verify_pin`) contra la sede recién elegida, sin pedir el PIN dos veces. Se extrajo la lógica de `handlePinSubmit` a una función `submitPin()` reutilizable para esto, sin duplicar código.
+- **`frontend/src/components/MobileKioskEntry.tsx`** (nuevo): pantalla de cédula+PIN → llama `kiosk_find_profile_branches` → lista de sedes autorizadas (con etiqueta "Sede Principal") → al elegir una, renderiza el mismo `KioskMode` de siempre con `autoPin` para completar el flujo (acción, foto si aplica) sin cambios en esa parte.
+- **`App.tsx`**: nueva entrada pública "Marcar desde mi Celular (varias sedes)" en la pantalla de login, junto a "Ir a Quiosco Biométrico" — independiente de `selectedCompanyId`/`localStorage`, para que un celular personal sin ninguna sede pre-configurada pueda usarla igual.
+
+### Verificado
+`npx tsc --noEmit` y `npm run build` limpios. Probado en el navegador de esta sesión (sin migración corrida aún, esperado): el botón nuevo aparece en el login, el formulario de cédula+PIN se ve y envía correctamente, y al no existir todavía la función en la base de datos de pruebas, el error se muestra de forma clara y controlada ("Could not find the function...") — sin errores de JavaScript, confirmando que el cableado del flujo es correcto de punta a punta. **Pendiente para el usuario:**
+1. Ejecutar `0013_kiosk_mobile_branches.sql` en ambas instancias.
+2. Probar con un empleado real asignado a 2+ sedes: entrar por "Marcar desde mi Celular", confirmar que solo aparecen SUS sedes (nunca las de otros empleados ni otras organizaciones), elegir una, y completar la marcación normal (PIN no se vuelve a pedir).
+3. Probar el límite de intentos: 5 intentos con cédula/PIN incorrectos seguidos deben bloquear con el mensaje de "Demasiados intentos fallidos" — confirmar que se desbloquea solo pasados los 15 minutos.
+4. Pendiente de la hoja de ruta (sección 26): informe de "Empleados Flotantes / Desplazamiento entre Sedes", planeado para construirse justo después de validar este modo celular con datos reales.

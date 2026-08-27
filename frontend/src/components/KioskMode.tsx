@@ -15,6 +15,12 @@ interface KioskModeProps {
     onBack?: () => void;
     companyName?: string;
     biometricEnabled?: boolean;
+    // Modo celular (empleados flotantes, ver migración 0013): el PIN ya se
+    // verificó una vez en el paso de "elegir sede" (kiosk_find_profile_branches),
+    // así que se salta la pantalla de PIN aquí para no pedirlo dos veces —
+    // reutiliza exactamente la misma verificación (kiosk_verify_pin) contra
+    // la sede ya elegida, sin duplicar lógica.
+    autoPin?: string;
 }
 
 interface KioskUser {
@@ -29,7 +35,7 @@ interface LastEntry {
   created_at: string;
 }
 
-export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, biometricEnabled = false, onSuccess, onBack }) => {
+export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, targetLocation, radiusMeters = 100, biometricEnabled = false, onSuccess, onBack, autoPin }) => {
     const { isLoading, isInside, distance, currentLocation, accuracy, error: geoError, refresh: refreshLocation } = useGeofencing(targetLocation, radiusMeters);
     const [pin, setPin] = useState('');
     const [step, setStep] = useState<'pin' | 'action' | 'face' | 'leave'>('pin');
@@ -113,14 +119,13 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         }
     }, [isCameraActive]);
 
-    const handlePinSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!pin) return;
+    const submitPin = async (pinValue: string) => {
+        if (!pinValue) return;
 
         setStatus({ type: 'loading', msg: 'Verificando PIN...' });
 
         const { data: users, error: userError } = await supabase
-            .rpc('kiosk_verify_pin', { p_company_id: companyId, p_pin_code: pin });
+            .rpc('kiosk_verify_pin', { p_company_id: companyId, p_pin_code: pinValue });
 
         const user = users?.[0];
 
@@ -142,6 +147,24 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
         // Defer timer to avoid blocking INP
         setTimeout(() => startInactivityTimer(), 0);
     };
+
+    const handlePinSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await submitPin(pin);
+    };
+
+    // Modo celular: el PIN ya se verificó en el paso de elegir sede — se
+    // reintenta aquí automáticamente contra la sede ya elegida (companyId),
+    // sin mostrar el teclado de PIN. Guard con ref para que no se reintente
+    // si el componente se re-renderiza por otro motivo.
+    const autoPinTriedRef = useRef(false);
+    React.useEffect(() => {
+        if (autoPin && !autoPinTriedRef.current) {
+            autoPinTriedRef.current = true;
+            submitPin(autoPin);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoPin]);
 
     const handleActionSelect = (type: EventType) => {
         setSelectedType(type);
@@ -425,7 +448,12 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
                     </div>
                 )}
 
-                {step === 'pin' ? (
+                {step === 'pin' && autoPin ? (
+                    <div className="flex flex-col items-center gap-4 py-10 animate-pulse">
+                        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Verificando identidad...</p>
+                    </div>
+                ) : step === 'pin' ? (
                     <form onSubmit={handlePinSubmit} className="space-y-6">
                         <div className="space-y-4">
                             <label className="text-xs font-black uppercase text-muted-foreground tracking-widest block text-center">Ingresa tu Código PIN</label>
