@@ -754,3 +754,21 @@ El usuario reportó que un empleado asignado a varias sedes, marcando desde su p
 2. Probar con un empleado real asignado a 2+ sedes: entrar por "Marcar desde mi Celular", confirmar que solo aparecen SUS sedes (nunca las de otros empleados ni otras organizaciones), elegir una, y completar la marcación normal (PIN no se vuelve a pedir).
 3. Probar el límite de intentos: 5 intentos con cédula/PIN incorrectos seguidos deben bloquear con el mensaje de "Demasiados intentos fallidos" — confirmar que se desbloquea solo pasados los 15 minutos.
 4. Pendiente de la hoja de ruta (sección 26): informe de "Empleados Flotantes / Desplazamiento entre Sedes", planeado para construirse justo después de validar este modo celular con datos reales.
+
+## 28. Enlaces directos de Kiosko por sede + QR, CI y Error Boundary (2026-10-04)
+
+### Estabilidad (antes de la función nueva)
+- **Hallazgo:** el `npx tsc --noEmit` usado hasta ahora como "typecheck limpio" **no revisaba nada**: `frontend/tsconfig.json` tiene `files: []` con `references`. El chequeo real es `tsc -p tsconfig.app.json --noEmit` (ahora `npm run typecheck`); tenía 19 errores, ya corregidos. El build de Vercel es solo `vite build`, sin tipos.
+- **CI** (`.github/workflows/ci.yml`): typecheck + build bloqueantes; lint informativo (~170 errores heredados, casi todos `no-explicit-any`).
+- **Error Boundary** (`ErrorBoundary.tsx`, montado en `main.tsx`): mensaje + "Recargar" en vez de pantalla en blanco.
+- **GitHub:** ruleset "Proteger master" activo (sin push directo, PR obligatorio con 0 aprobaciones, check `frontend` requerido, sin bypass). Flujo: `develop` -> Preview (Supabase de pruebas) -> PR -> `master` (Producción, Supabase `yruz…`). PR #1 = CI + Error Boundary.
+- **Ambientes:** Producción = `master` + `in.asiste360.com` + proyecto Supabase `yruztdwrxskronrgmysg`. Pruebas = `develop` (Preview de Vercel) + local + proyecto `atrrjjavlxnloknqhnxk`. La rama `desarrollo` está abandonada.
+
+### Enlaces de Kiosko
+- **Por qué hoy había que entrar como admin:** la migración 0001 dejó `grant select on InA_companies to anon`, pero la única política de SELECT es `to authenticated` -> sin sesión la lista de sedes llega **vacía**. El Kiosko solo "tenía sede" porque el admin ya estaba logueado.
+- **`?kiosko=<id de sede>`**: arranca directo en el Kiosko de esa sede, sin landing ni login, y sin botón de salir. **`?kiosko=movil`**: abre directo cédula+PIN (flujo de empleados flotantes, 0013). Enlace inválido o sede inexistente -> pantalla "Enlace de Kiosko no válido" (nunca cae en otra sede). Con enlace se omite `loadOwnProfile()`: una sesión de admin olvidada en ese equipo no cambia la sede.
+- **Migración `0014_kiosk_get_company.sql`** (**el usuario debe ejecutarla en ambas instancias**): RPC `kiosk_get_company(uuid)`, SECURITY DEFINER, `grant execute` a anon/authenticated; devuelve solo nombre, coordenadas, radio y bandera de biometría de UNA sede cuyo id se conoce. No se abrió la tabla completa a anon.
+- **Admin:** `KioskLinks.tsx` en Configuración de Sede: copiar/abrir enlace, QR (`qrcode.react`) y descarga PNG, para el enlace de la sede y el de celular. Utilidades en `utils/kioskLink.ts`.
+- **Verificado:** typecheck y build limpios; en navegador: enlace inválido, sede inexistente y `?kiosko=movil` (sin botón volver) con el servidor real; flujo de éxito con una respuesta simulada del RPC (abre la sede correcta, sin salida, geovalla activa). **No verificado:** el RPC real (falta correr 0014) y el panel de enlaces/QR (requiere sesión de admin).
+- **Pendiente:** correr 0014 (y confirmar que 0013 ya corrió) en pruebas y Producción; probar el enlace en un celular real; backups del proyecto de Producción; el botón "Ir a Quiosco Biométrico" de la pantalla de login tampoco funciona sin sesión por la misma causa de RLS (no se tocó).
+
