@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Camera, Search, UserCheck, AlertCircle, Calendar, Building2, Eye, CheckCircle2, ArrowUpRight } from 'lucide-react';
+import { Camera, Search, AlertCircle, Calendar, Building2, Eye, CheckCircle2, ArrowUpRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { TimeEntryWithProfile } from '../types';

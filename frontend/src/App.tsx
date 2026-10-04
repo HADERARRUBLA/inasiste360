@@ -304,7 +304,7 @@ function App() {
         targetLocation={targetLocation}
         radiusMeters={currentCompany?.radius_limit || 100}
         biometricEnabled={biometricEnabled}
-        onSuccess={(uid, type) => { /* Registro exitoso */ }}
+        onSuccess={() => { /* Registro exitoso */ }}
         onBack={() => setIsKiosk(false)}
       />
     );

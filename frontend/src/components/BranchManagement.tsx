@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Building2, MapPin, Navigation, Save, Plus, Trash2, Pencil, X, Radius, CheckCircle2, Search, MapPinOff } from 'lucide-react';
-import type { Company } from '../types';
 import { formatLatLng, validateLatLng, parseLatLng } from '../utils/geoUtils';
 import { GeoPickerMap } from './GeoPickerMap';
 import { showToast } from '../lib/toastStore';

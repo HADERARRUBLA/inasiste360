@@ -31,37 +31,6 @@ const CTA_LINK = "https://crm.asiste360.com/v2/preview/6YoBukYdjXiIKKireSwI";
 
 interface LandingPageProps { onLoginClick: () => void; }
 
-const Logo = ({ size = "base" }: { size?: "base" | "large" }) => {
-  const [error, setError] = useState(false);
-  
-  return (
-    <div className={`relative flex flex-col items-center justify-center transition-all duration-700 ${size === 'large' ? 'w-64 h-64 md:w-80 md:h-80' : 'w-24 h-24 md:w-32 md:h-32'}`}>
-      {/* Translucent white background for contrast */}
-      <div className="absolute inset-4 bg-white/10 backdrop-blur-md rounded-full z-0 border border-white/20 shadow-[0_0_50px_rgba(255,255,255,0.08)]"></div>
-      
-      {/* Dynamic Halo - The 360 Rotation Ring */}
-      <motion.div 
-        className="absolute inset-0 border-t-2 border-exec-primary/40 rounded-full z-10 pointer-events-none"
-        animate={{ rotate: 360 }}
-        transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-      />
-      
-      {!error ? (
-        <img 
-          src="/logo_intelligence.png" 
-          alt="ASISTE360 Logo" 
-          className="w-full h-full object-contain relative z-20 p-6 filter drop-shadow-[0_0_25px_rgba(255,255,255,0.4)]"
-          onError={() => setError(true)}
-        />
-      ) : (
-        <div className="relative z-20 flex flex-col items-center justify-center text-exec-primary">
-          <Shield className="w-24 h-24" />
-        </div>
-      )}
-    </div>
-  );
-};
-
 export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
   const [view, setView] = useState<View>('landing');
 
@@ -364,7 +333,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                         <Tooltip
                           contentStyle={{ background: '#171f33', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 11 }}
                           labelStyle={{ color: '#dae2fd' }}
-                          formatter={(v: number) => `$${v.toLocaleString('es-CO')}`}
+                          formatter={(v) => `$${(Number(v) || 0).toLocaleString('es-CO')}`}
                         />
                         <Legend wrapperStyle={{ fontSize: 10 }} />
                         <Bar dataKey="Sin Asiste360" fill="#475569" radius={[4, 4, 0, 0]} />
@@ -379,11 +348,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick }) => {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie data={breakdownData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85} paddingAngle={4}>
-                          {breakdownData.map((entry, i) => <Cell key={i} fill={BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length]} />)}
+                          {breakdownData.map((_entry, i) => <Cell key={i} fill={BREAKDOWN_COLORS[i % BREAKDOWN_COLORS.length]} />)}
                         </Pie>
                         <Tooltip
                           contentStyle={{ background: '#171f33', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 11 }}
-                          formatter={(v: number) => `$${v.toLocaleString('es-CO')}`}
+                          formatter={(v) => `$${(Number(v) || 0).toLocaleString('es-CO')}`}
                         />
                       </PieChart>
                     </ResponsiveContainer>
