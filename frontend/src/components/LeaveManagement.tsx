@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import type { LeaveRequest, LeaveType } from '../types';
+import type { LeaveType } from '../types';
 import { CalendarOff, Plus, X, Save, Trash2, Search, CheckCircle2, XCircle, AlertCircle, Pencil, History, Paperclip, Upload, Download } from 'lucide-react';
 import { showToast } from '../lib/toastStore';
 

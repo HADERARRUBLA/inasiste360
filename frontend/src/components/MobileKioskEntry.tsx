@@ -6,7 +6,9 @@ import { ArrowLeft, Building2, MapPinned, AlertCircle, UserCheck } from 'lucide-
 import { ThemeToggle } from './ThemeToggle';
 
 interface MobileKioskEntryProps {
-    onBack: () => void;
+    // Sin onBack (acceso por enlace directo) no se muestra "Volver al Inicio":
+    // el celular de un empleado no debe llevar al login de administrador.
+    onBack?: () => void;
 }
 
 interface SedeOption {
@@ -84,12 +86,14 @@ export const MobileKioskEntry: React.FC<MobileKioskEntryProps> = ({ onBack }) =>
             <div className="absolute -top-16 right-0 z-[60]">
                 <ThemeToggle />
             </div>
-            <button
-                onClick={step === 'identify' ? onBack : resetToIdentify}
-                className="absolute -top-16 left-0 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors font-black uppercase text-[10px] tracking-widest"
-            >
-                <ArrowLeft className="w-4 h-4" /> {step === 'identify' ? 'Volver al Inicio' : 'Cambiar Identidad'}
-            </button>
+            {(step !== 'identify' || onBack) && (
+                <button
+                    onClick={step === 'identify' ? onBack : resetToIdentify}
+                    className="absolute -top-16 left-0 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors font-black uppercase text-[10px] tracking-widest"
+                >
+                    <ArrowLeft className="w-4 h-4" /> {step === 'identify' ? 'Volver al Inicio' : 'Cambiar Identidad'}
+                </button>
+            )}
 
             <div className="bg-card border rounded-[2.5rem] p-10 shadow-2xl space-y-8">
                 <div className="text-center space-y-4">

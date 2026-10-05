@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Building2, Plus, Search, Trash2, Edit2, CheckCircle, XCircle } from 'lucide-react';
+import { Building2, Plus, Search, Edit2, CheckCircle, XCircle } from 'lucide-react';
 import type { Organization } from '../types';
 import { showToast } from '../lib/toastStore';
 

@@ -4,7 +4,7 @@ import type { TimeEntry } from '../types';
 import * as XLSX from 'xlsx';
 import {
     FileDown, Search, Users, Clock,
-    CheckCircle, TrendingUp, AlertTriangle,
+    CheckCircle, TrendingUp,
     MoreHorizontal, ArrowUpRight, ArrowDownRight, Trash2, CalendarOff
 } from 'lucide-react';
 import {
@@ -159,15 +159,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ companyId, view 
 
     const stats = useMemo(() => {
         const todayStr = new Date().toLocaleDateString('en-CA');
-        const now = new Date();
-
-        // 1. Basic Filtering
-        const filteredForStats = entries.filter(e => {
-            const date = e.date || e.created_at?.split('T')[0];
-            const matchesDate = date && date >= dateRange.start && date <= dateRange.end;
-            const matchesProfile = selectedProfileId === 'all' || e.profile_id === selectedProfileId;
-            return matchesDate && matchesProfile;
-        });
 
         const entriesToday = entries.filter(e => (e.date || e.created_at?.split('T')[0]) === todayStr);
 

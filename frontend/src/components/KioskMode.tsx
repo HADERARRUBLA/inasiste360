@@ -224,7 +224,7 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
 
                     biometricMatch = (matchResult as any)?.match ?? false;
                     biometricConfidence = (matchResult as any)?.confidence ?? 0;
-                    isVerified = biometricMatch;
+                    isVerified = !!biometricMatch;
                     // Si NO hay match, informamos pero permitimos el flujo (auditoría posterior)
                 } else {
                     setStatus({ type: 'error', msg: 'No se detectó rostro. Mira directo a la cámara e intenta de nuevo.' });
@@ -248,11 +248,16 @@ export const KioskMode: React.FC<KioskModeProps> = ({ companyId, companyName, ta
             return;
         }
 
+        if (!currentUser) {
+            setStatus({ type: 'error', msg: 'No se pudo identificar al colaborador. Intenta de nuevo.' });
+            return;
+        }
+
         setStatus({ type: 'loading', msg: 'Registrando...' });
 
-        const isReturn = ['breakfast', 'lunch', 'active_pause', 'other'].includes(lastEntry?.event_type);
+        const isReturn = ['breakfast', 'lunch', 'active_pause', 'other'].includes(lastEntry?.event_type ?? '');
         const eventLabel = isReturn
-            ? `Regreso de ${getEventLabel(lastEntry.event_type)}`
+            ? `Regreso de ${getEventLabel(lastEntry!.event_type)}`
             : getEventLabel(type);
 
         // Build metadata carefully to ensure biometric fields are present

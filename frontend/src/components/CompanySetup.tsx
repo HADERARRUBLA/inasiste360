@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Building2, MapPin, Navigation, Save, ShieldCheck, Radius, RefreshCcw } from 'lucide-react';
 import { formatLatLng, validateLatLng } from '../utils/geoUtils';
 import { showToast } from '../lib/toastStore';
+import { KioskLinks } from './KioskLinks';
 
 interface CompanySetupProps {
     companyId: string | null;
@@ -379,6 +380,8 @@ export const CompanySetup: React.FC<CompanySetupProps> = ({ companyId, onSave })
                     </button>
                 </div>
             </form>
+
+            {companyId && <KioskLinks companyId={companyId} companyName={company.name} />}
         </div>
     );
 };

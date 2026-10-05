@@ -18,6 +18,12 @@ import { ToastContainer } from './components/ToastContainer';
 import { PayrollRpcShadowPanel } from './components/PayrollRpcShadowPanel';
 import { ReportsCenter } from './components/ReportsCenter';
 import { parseLatLng } from './utils/geoUtils';
+import { parseKioskLink } from './utils/kioskLink';
+
+// Enlace directo al Kiosko (?kiosko=<sede> o ?kiosko=movil): se lee una sola
+// vez al cargar. Con enlace, la app nunca pasa por la landing ni por el login
+// de administrador y no ofrece salir hacia ellos.
+const INITIAL_KIOSK_LINK = parseKioskLink(window.location.search);
 
 type ActiveTab = 'dashboard' | 'employees' | 'leaves' | 'audit' | 'config' | 'branches' | 'admins' | 'reports' | 'organizations' | 'rpc-shadow' | 'informes';
 
@@ -27,7 +33,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [isKiosk, setIsKiosk] = useState(false);
-  const [isMobileKiosk, setIsMobileKiosk] = useState(false);
+  const [isMobileKiosk, setIsMobileKiosk] = useState(INITIAL_KIOSK_LINK?.type === 'movil');
+  const [kioskLinkError, setKioskLinkError] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [companies, setCompanies] = useState<any[]>([]);
@@ -158,6 +165,31 @@ function App() {
   useEffect(() => {
     const initApp = async () => {
       try {
+        // Enlace de Kiosko de una sede: sin sesión, InA_companies llega vacía
+        // por RLS (ver 0014_kiosk_get_company.sql), así que se pide solo esa
+        // sede por RPC.
+        if (INITIAL_KIOSK_LINK?.type === 'sede') {
+          const linkedId = INITIAL_KIOSK_LINK.companyId;
+          const { data: rows, error: rpcError } = linkedId
+            ? await supabase.rpc('kiosk_get_company', { p_company_id: linkedId })
+            : { data: null, error: null };
+          const linked = (Array.isArray(rows) ? rows[0] : rows) as any;
+          if (rpcError || !linked) {
+            setKioskLinkError(true);
+            return;
+          }
+          setCompanies([{
+            id: linked.company_id,
+            name: linked.company_name,
+            lat_long: linked.lat_long,
+            radius_limit: linked.radius_limit,
+            settings: { features: { biometric_verification: linked.biometric_verification } }
+          }]);
+          setSelectedCompanyId(linked.company_id);
+          setIsKiosk(true);
+          return;
+        }
+
         const { data } = await supabase.from('InA_companies').select('*').order('name');
         if (data && data.length > 0) {
           setCompanies(data);
@@ -176,9 +208,12 @@ function App() {
         }
       } catch (err) {
         console.error('Error initializing app:', err);
+        if (INITIAL_KIOSK_LINK?.type === 'sede') setKioskLinkError(true);
       } finally {
-        // Restaura sesión de Supabase Auth si existe (recarga de página, etc.)
-        await loadOwnProfile();
+        // Restaura sesión de Supabase Auth si existe (recarga de página, etc.).
+        // Con enlace de Kiosko se omite: una sesión de admin olvidada en este
+        // equipo no debe cambiar la sede del Kiosko.
+        if (!INITIAL_KIOSK_LINK) await loadOwnProfile();
         setAuthLoading(false);
       }
     };
@@ -279,7 +314,21 @@ function App() {
   }
 
   if (isMobileKiosk) {
-    return <MobileKioskEntry onBack={() => setIsMobileKiosk(false)} />;
+    return <MobileKioskEntry onBack={INITIAL_KIOSK_LINK ? undefined : () => setIsMobileKiosk(false)} />;
+  }
+
+  if (kioskLinkError) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 font-sans">
+        <div className="w-full max-w-md bg-card border-2 rounded-[2rem] p-10 text-center space-y-4 shadow-2xl">
+          <img src="/logo_square.png" alt="Asiste360" className="w-40 h-auto mx-auto object-contain" />
+          <h1 className="text-xl font-black">Enlace de Kiosko no válido</h1>
+          <p className="text-sm text-muted-foreground">
+            La sede de este enlace no existe o ya no está disponible. Pide al administrador un enlace nuevo.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (isKiosk) {
@@ -304,8 +353,8 @@ function App() {
         targetLocation={targetLocation}
         radiusMeters={currentCompany?.radius_limit || 100}
         biometricEnabled={biometricEnabled}
-        onSuccess={(uid, type) => { /* Registro exitoso */ }}
-        onBack={() => setIsKiosk(false)}
+        onSuccess={() => { /* Registro exitoso */ }}
+        onBack={INITIAL_KIOSK_LINK ? undefined : () => setIsKiosk(false)}
       />
     );
   }
