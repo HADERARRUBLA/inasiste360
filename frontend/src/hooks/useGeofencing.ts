@@ -19,6 +19,8 @@ export function useGeofencing(targetLocation: Location | null, radiusMeters: num
 
     const refresh = () => setRefreshKey(prev => prev + 1);
 
+    // Reiniciar el estado al empezar a buscar la ubicación es intencional (muestra "buscando" mientras llega el GPS).
+    /* eslint-disable react-hooks/set-state-in-effect */
     useEffect(() => {
         if (!targetLocation) {
             setIsInside(null);
@@ -57,6 +59,7 @@ export function useGeofencing(targetLocation: Location | null, radiusMeters: num
 
         return () => navigator.geolocation.clearWatch(watchId);
     }, [targetLocation, radiusMeters, refreshKey]);
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     return { isInside, currentLocation, distance, accuracy, isLoading, error, refresh };
 }
