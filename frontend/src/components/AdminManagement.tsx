@@ -133,6 +133,8 @@ export const AdminManagement: React.FC = () => {
                 await adminCreationClient.auth.signOut();
             }
 
+            // La contraseña se descarta a propósito: solo sirve para crear la cuenta de Auth, nunca se guarda en InA_profiles.
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { managed_branches, password: _password, ...profileData } = formData;
 
             const dataToSave: Record<string, any> = {

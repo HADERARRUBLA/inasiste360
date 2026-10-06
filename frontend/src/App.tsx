@@ -157,7 +157,7 @@ function App() {
       }
 
       await loadOwnProfile();
-    } catch (err: any) {
+    } catch {
       setLoginError('Error de autenticación.');
     }
   };

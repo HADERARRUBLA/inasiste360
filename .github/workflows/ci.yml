@@ -22,6 +22,8 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Tests (cálculo de nómina)
+        run: npm test
       - name: Build
         run: npm run build
       # Informativo por ahora: hay ~170 errores heredados (casi todos "no-explicit-any").
